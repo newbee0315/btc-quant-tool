@@ -5,12 +5,15 @@ import json
 from datetime import datetime
 from typing import Dict, Optional
 
+from src.notification.feishu import FeishuBot
+
 logger = logging.getLogger(__name__)
 
 class RealTrader:
-    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1):
+    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1, notifier: Optional[FeishuBot] = None):
         self.symbol = symbol
         self.leverage = leverage
+        self.notifier = notifier
         # Read amount from env, default to 20 USDT
         self.amount_usdt = float(os.getenv("TRADE_AMOUNT_USDT", "20.0")) 
         
@@ -146,6 +149,18 @@ class RealTrader:
                 })
                 
                 logger.info(f"SL/TP placed. SL: {sl_price}, TP: {tp_price}")
+                
+                # Notify Feishu
+                if self.notifier:
+                    self.notifier.send_trade_card(
+                        action=side.upper(),
+                        symbol=self.symbol,
+                        price=entry_price,
+                        amount=amount,
+                        reason="Real Trade Signal",
+                        sl=sl_price,
+                        tp=tp_price
+                    )
 
         except Exception as e:
             logger.error(f"Trade execution failed: {e}")
@@ -161,6 +176,9 @@ class RealTrader:
                 logger.info("Position closed")
                 # Also cancel open orders (SL/TP)
                 self.exchange.cancel_all_orders(self.symbol)
+                
+                if self.notifier:
+                    self.notifier.send_text(f"⚠️ 实盘平仓 (Real Trade Closed)\nSymbol: {self.symbol}\nReason: Signal Reversal")
         except Exception as e:
             logger.error(f"Error closing position: {e}")
 

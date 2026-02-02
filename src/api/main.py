@@ -50,8 +50,8 @@ backtester = Backtester()
 TRADING_MODE = os.getenv("TRADING_MODE", "paper").lower()
 if TRADING_MODE == "real":
     logger.info("⚠️ STARTING IN REAL TRADING MODE ⚠️")
-    # You might want to pass feishu_bot to RealTrader too if you add notification support later
-    trader = RealTrader() 
+    # Pass feishu_bot for notifications
+    trader = RealTrader(notifier=feishu_bot) 
 else:
     logger.info("Starting in Paper Trading Mode")
     trader = PaperTrader(notifier=feishu_bot)
