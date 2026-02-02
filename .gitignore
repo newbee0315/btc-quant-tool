@@ -1,44 +1,55 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environment
-.env
-.venv
 env/
 venv/
-ENV/
-env.bak/
-venv.bak/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
 
-# IDE
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.next/
+dist/
+out/
+build/
+
+# IDE / System
+.DS_Store
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Project specific
-logs/
-data/
-*.log
-.DS_Store
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Docker
+.docker/
+
+# Project Specific
+src/data/*.csv
+src/models/saved_models/*.joblib
+src/models/saved_models/model_metrics.json
+backend_logs.txt
+frontend_logs.txt
+*.tar.gz
+*.exp

@@ -1,8 +1,11 @@
 # 项目概览 (Project Overview)
 
-本项目旨在开发一个集成了量化模型的比特币（BTC）数据分析与预测系统。核心功能包括获取 BTC 的历史与实时交易数据，利用机器学习模型实时预测未来 10分钟、30分钟及 60分钟的价格涨跌概率，并通过一个直观的可视化界面展示预测结果与市场状态。
+本项目旨在开发一个集成了量化模型的比特币（BTC）数据分析与预测系统。核心功能包括获取 BTC 的历史与实时交易数据，利用机器学习模型实时预测未来 10分钟、30分钟及 60分钟的价格涨跌概率，并通过一个高度定制化的、类似币安风格的专业 Web 界面展示预测结果与市场状态。
 
-项目目标用户为加密货币交易者与量化分析师，技术栈主要基于 Python（数据处理与模型训练）与现代 Web 前端或 Python 可视化框架（如 Streamlit/Dash）。
+项目目标用户为加密货币交易者与量化分析师，技术栈采用前后端分离架构：
+- **前端**: Next.js / React (提供高性能、现代化的交互体验，应用 Antigravity UI/UX 设计)
+- **后端**: FastAPI (Python) (负责数据处理、模型推理及 API 服务)
+- **数据**: PostgreSQL + TimescaleDB (时序数据存储)
 
 # 资源索引 (Resource Index)
 
@@ -68,7 +71,7 @@
   {
     "mcpServers": {
       "git": {
-        "command": "python3",
+        "command": "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3",
         "args": [
           "-m",
           "mcp_server_git",
@@ -105,7 +108,7 @@
 
 1.  **项目初始化 (Initialization)**
     - 基于“数据科学/量化项目标准结构”创建项目目录。
-    - 配置 Python 虚拟环境及 `requirements.txt` (包含 `ccxt`, `pandas`, `scikit-learn`, `streamlit` 等)。
+    - 配置 Python 虚拟环境及 `requirements.txt` (包含 `ccxt`, `pandas`, `scikit-learn` 等)。
 
 2.  **数据基础设施 (Data Infrastructure)**
     - 部署 PostgreSQL + TimescaleDB。
@@ -117,9 +120,9 @@
     - 模型评估与回测。
 
 4.  **可视化与交互 (Visualization & UI)**
-    - 使用 Streamlit 或 Next.js 构建前端界面。
+    - 使用 React/Next.js 构建币安风格前端界面。
     - 集成实时价格图表与模型预测概率仪表盘。
-    - 接入 `ui-ux-pro-max-skill` 优化界面体验。
+    - 接入 `ui-ux-pro-max-skill` 生成设计系统并落地到前端实现。
 
 5.  **部署与监控 (Deployment)**
     - 容器化应用 (Docker)。
