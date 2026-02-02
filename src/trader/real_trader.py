@@ -8,10 +8,11 @@ from typing import Dict, Optional
 logger = logging.getLogger(__name__)
 
 class RealTrader:
-    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1, amount_usdt: float = 100.0):
+    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1):
         self.symbol = symbol
         self.leverage = leverage
-        self.amount_usdt = amount_usdt # Amount to trade per order in USDT
+        # Read amount from env, default to 20 USDT
+        self.amount_usdt = float(os.getenv("TRADE_AMOUNT_USDT", "20.0")) 
         
         # Initialize Exchange
         api_key = os.getenv("BINANCE_API_KEY")
