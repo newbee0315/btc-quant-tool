@@ -27,6 +27,7 @@ from src.models.predictor import PricePredictor
 from src.models.train import train_models
 from src.backtest.backtest import Backtester
 from src.trader.paper_trader import PaperTrader
+from src.trader.real_trader import RealTrader
 from src.notification.feishu import FeishuBot
 
 # Configure logging
@@ -44,7 +45,19 @@ collector = CryptoDataCollector(symbol='BTCUSDT')
 predictor = PricePredictor()
 scheduler = AsyncIOScheduler()
 backtester = Backtester()
-paper_trader = PaperTrader(notifier=feishu_bot)
+
+# Trading Mode Selection
+TRADING_MODE = os.getenv("TRADING_MODE", "paper").lower()
+if TRADING_MODE == "real":
+    logger.info("⚠️ STARTING IN REAL TRADING MODE ⚠️")
+    # You might want to pass feishu_bot to RealTrader too if you add notification support later
+    trader = RealTrader() 
+else:
+    logger.info("Starting in Paper Trading Mode")
+    trader = PaperTrader(notifier=feishu_bot)
+
+# Alias for compatibility with existing endpoints that use 'paper_trader'
+paper_trader = trader
 
 # Global state for signals
 latest_signal = 0  # 0: Hold, 1: Buy, -1: Sell
