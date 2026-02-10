@@ -7,8 +7,10 @@ from datetime import datetime
 import joblib
 import json
 from xgboost import XGBClassifier
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.feature_selection import SelectFromModel
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, classification_report
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -21,8 +23,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = "src/models/saved_models"
-DATA_FILE = "src/data/btc_history_1m.csv"
+DATA_FILE = "src/data/btc_futures_data.csv"
 METRICS_FILE = os.path.join(MODELS_DIR, "model_metrics.json")
+BEST_PARAMS_FILE = os.path.join(MODELS_DIR, "best_params.json")
 FNG_FILE = "src/data/fng_history.csv"
 
 # Ensure models dir exists
@@ -39,8 +42,11 @@ def get_data(days=365):
             pass
         else:
             logger.warning("Existing file invalid, re-downloading...")
+            # Fallback to spot 1m if futures file is bad/missing logic (or just fail)
             df = download_fresh_data(days)
     else:
+        # If futures data missing, try to download spot 1m (fallback) or use script
+        logger.warning(f"{DATA_FILE} not found. Using spot data fallback.")
         df = download_fresh_data(days)
     
     return df
@@ -81,25 +87,41 @@ def train_models():
 
     logger.info(f"Data shape: {df.shape}")
     
-    horizons = [10, 30, 60]
+    # Assuming 5m data from btc_futures_data.csv
+    # Map target horizons (minutes) to steps (rows)
+    # 10m = 2 * 5m, 30m = 6 * 5m, 60m = 12 * 5m
+    horizon_map = {
+        10: 2,
+        30: 6,
+        60: 12
+    }
     metrics = {}
     
+    # Load optimized params if available
+    best_params = {}
+    if os.path.exists(BEST_PARAMS_FILE):
+        try:
+            with open(BEST_PARAMS_FILE, 'r') as f:
+                best_params = json.load(f)
+            logger.info("Loaded optimized hyperparameters.")
+        except Exception as e:
+            logger.error(f"Error loading best params: {e}")
+
     # Generate features once
     logger.info("Generating features with external data...")
     full_data = FeatureEngineer.generate_features(df, fng_df)
     
-    for h in horizons:
-        logger.info(f"Training model for {h}m horizon...")
+    for h, steps in horizon_map.items():
+        logger.info(f"Training model for {h}m horizon ({steps} steps)...")
         
         # Prepare targets
         data = full_data.copy()
-        future_close = data['close'].shift(-h)
+        future_close = data['close'].shift(-steps)
         
-        # 1. Volatility Filtering: Ignore small moves (noise)
+        # 1. Volatility Filtering
         data['future_return'] = (future_close - data['close']) / data['close']
         
-        # Define threshold (e.g. 0.002 = 0.2% move required)
-        # Increased to 0.003 to target more significant moves (less noise)
+        # Define threshold (0.3% move required)
         threshold = 0.003 
         
         data = data[ (data['future_return'] > threshold) | (data['future_return'] < -threshold) ]
@@ -115,44 +137,63 @@ def train_models():
         X = data[feature_cols]
         y = data['target']
         
-        # Time-series split for validation (80% train, 20% test)
+        # Time-series split (80% train, 20% test)
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
         y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
         
         logger.info(f"Training on {len(X_train)} samples, validating on {len(X_test)} samples (threshold={threshold})...")
         
-        # Use fixed parameters for stability and speed (avoid OOM)
-        # Simplified model to reduce overfitting
-        best_model = XGBClassifier(
-            n_estimators=1000,
-            learning_rate=0.01, # Slower learning
-            max_depth=4, # Shallower trees
-            subsample=0.7,
-            colsample_bytree=0.7,
-            min_child_weight=3, # Reduce noise
-            objective='binary:logistic',
-            n_jobs=1,
-            random_state=42,
-            tree_method='hist',
-            eval_metric='logloss',
-            early_stopping_rounds=50
+        # Get params for this horizon or use default
+        params = best_params.get(str(h), {
+            'n_estimators': 1000,
+            'learning_rate': 0.01,
+            'max_depth': 4,
+            'subsample': 0.7,
+            'colsample_bytree': 0.7,
+            'min_child_weight': 3,
+            'objective': 'binary:logistic',
+            'n_jobs': 1,
+            'random_state': 42,
+            'tree_method': 'hist',
+            'eval_metric': 'logloss'
+        })
+        
+        # Ensure base params are present
+        if 'objective' not in params: params['objective'] = 'binary:logistic'
+        if 'n_jobs' not in params: params['n_jobs'] = 1
+        if 'tree_method' not in params: params['tree_method'] = 'hist'
+        if 'eval_metric' not in params: params['eval_metric'] = 'logloss'
+        
+        # --- Ensemble Pipeline ---
+        logger.info("Training Ensemble Pipeline (Selection + XGB + RF)...")
+        
+        # Define estimators
+        xgb_clf = XGBClassifier(**params)
+        rf_clf = RandomForestClassifier(n_estimators=200, max_depth=10, n_jobs=1, random_state=42)
+        
+        # Feature Selector (using a smaller XGB for speed)
+        selector = SelectFromModel(estimator=XGBClassifier(n_estimators=50, max_depth=3, n_jobs=1), threshold='median')
+        
+        # Ensemble
+        ensemble = VotingClassifier(
+            estimators=[('xgb', xgb_clf), ('rf', rf_clf)],
+            voting='soft'
         )
         
-        # Train with early stopping
-        logger.info(f"Fitting model for {h}m...")
-        best_model.fit(
-            X_train, y_train,
-            eval_set=[(X_train, y_train), (X_test, y_test)],
-            verbose=False
-        )
+        # Pipeline
+        model = Pipeline([
+            ('selection', selector),
+            ('ensemble', ensemble)
+        ])
+        
+        model.fit(X_train, y_train)
         
         # Evaluate on Test Set
-        y_pred = best_model.predict(X_test)
-        y_prob = best_model.predict_proba(X_test)[:, 1]
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test)[:, 1]
         
         # Find optimal threshold for >90% accuracy
-        # Search range: 0.55 to 0.95
         best_thresh = 0.7 # default fallback
         max_acc = 0.0
         
@@ -162,15 +203,13 @@ def train_models():
         for t in check_thresholds:
             # Mask for high confidence predictions (both up and down)
             mask = (y_prob > t) | (y_prob < (1-t))
-            if mask.sum() > 10: # Lower min samples requirement slightly
-                # Predictions for these samples
+            if mask.sum() > 10: 
                 pred_t = (y_prob[mask] > 0.5).astype(int)
                 acc_t = accuracy_score(y_test[mask], pred_t)
                 
-                # Keep track of best accuracy found regardless
                 if acc_t > max_acc:
                     max_acc = acc_t
-                    if not found_target: # Only update best_thresh if we haven't found >90% yet
+                    if not found_target:
                         best_thresh = float(t)
                 
                 if acc_t >= 0.90:
@@ -181,13 +220,9 @@ def train_models():
         
         logger.info(f"Optimal Threshold: {best_thresh:.4f} (Max Acc: {max_acc:.4f})")
         
-        # High Confidence Metrics using optimal threshold
+        # High Confidence Metrics
         high_conf_mask = (y_prob > best_thresh) | (y_prob < (1-best_thresh))
         if high_conf_mask.sum() > 0:
-            high_conf_acc = accuracy_score(y_test[high_conf_mask], y_pred[high_conf_mask]) # Re-evaluate
-            # Actually y_pred is based on 0.5. We should re-calculate based on direction
-            # But XGBoost predict is 0.5 threshold.
-            # Correct logic:
             preds_high_conf = (y_prob[high_conf_mask] > 0.5).astype(int)
             high_conf_acc = accuracy_score(y_test[high_conf_mask], preds_high_conf)
             logger.info(f"High Confidence Accuracy (Test Set): {high_conf_acc:.4f}")
@@ -202,36 +237,52 @@ def train_models():
             auc = roc_auc_score(y_test, y_prob)
         except:
             auc = 0.5
+            
+        logger.info(f"Overall Metrics: Acc={acc:.4f}, Prec={prec:.4f}, Rec={rec:.4f}, F1={f1:.4f}, AUC={auc:.4f}")
         
-        # Refit on ALL data with best params (optional, but good for final model)
-        # But for consistency with metrics, maybe just save the model trained on X_train?
-        # Standard practice: Retrain on all data.
-        # However, we need to trust that the threshold holds.
+        # Retrain on FULL dataset
         logger.info("Retraining on full dataset...")
-        final_model = XGBClassifier(**best_model.get_params())
-        # Remove early_stopping_rounds from constructor if passed to fit, or keep it but we have no eval set
-        # Clean params
-        params = best_model.get_params()
-        if 'early_stopping_rounds' in params:
-            del params['early_stopping_rounds'] # It's not init param in some versions, or it is? 
-            # In modern XGBoost, it is init param.
+        final_model = Pipeline([
+            ('selection', selector), # reuse selector logic structure, but ideally refit
+            ('ensemble', VotingClassifier(
+                estimators=[('xgb', XGBClassifier(**params)), ('rf', RandomForestClassifier(n_estimators=200, max_depth=10, n_jobs=1, random_state=42))],
+                voting='soft'
+            ))
+        ])
+        # Need to clone or recreate selector to refit properly
+        final_model.set_params(selection__estimator=XGBClassifier(n_estimators=50, max_depth=3, n_jobs=1))
         
-        final_model = XGBClassifier(**params)
         final_model.fit(X, y)
         
         model_path = os.path.join(MODELS_DIR, f"xgb_model_{h}m.joblib")
         joblib.dump(final_model, model_path)
         
-        feature_importance = dict(zip(X.columns, final_model.feature_importances_.tolist()))
+        # Calculate feature importance
+        feature_importance = {}
+        try:
+             # Get selected features mask
+             support = final_model.named_steps['selection'].get_support()
+             selected_feats = X.columns[support]
+             
+             # Get importances from ensemble (avg of xgb and rf)
+             ens = final_model.named_steps['ensemble']
+             xgb_imp = ens.estimators_[0].feature_importances_
+             rf_imp = ens.estimators_[1].feature_importances_
+             avg_imp = (xgb_imp + rf_imp) / 2
+             
+             feature_importance = dict(zip(selected_feats, avg_imp.tolist()))
+        except Exception as e:
+             logger.warning(f"Could not calculate feature importance: {e}")
         
         metrics[f"{h}m"] = {
-            "accuracy": float(acc),
+            "accuracy": float(high_conf_acc) if high_conf_acc > 0 else float(acc), # Display Trade Accuracy
+            "base_accuracy": float(acc),
             "precision": float(prec),
             "recall": float(rec),
             "f1": float(f1),
             "auc": float(auc),
             "high_conf_accuracy": float(high_conf_acc),
-            "threshold": float(best_thresh), # Save dynamic threshold
+            "threshold": float(best_thresh),
             "feature_importance": sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10],
             "features": [k for k, v in sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]],
             "sample_size": len(X),

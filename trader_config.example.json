@@ -1,0 +1,11 @@
+{
+    "mode": "real",
+    "sl_pct": 0.04,
+    "tp_pct": 0.06,
+    "amount_usdt": 20.0,
+    "api_key": "YOUR_API_KEY_HERE",
+    "api_secret": "YOUR_API_SECRET_HERE",
+    "proxy_url": "http://127.0.0.1:33210",
+    "total_capital": 1000.0,
+    "risk_per_trade": 0.02
+}

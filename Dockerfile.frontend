@@ -6,8 +6,9 @@ WORKDIR /app
 # Copy package files
 COPY frontend/package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (Use Taobao/Aliyun Mirror)
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install
 
 # Copy source code
 COPY frontend/ .

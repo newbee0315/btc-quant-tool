@@ -49,13 +49,15 @@ interface SensitivityResult {
     total_trades: number;
 }
 
-export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (results: any, trades: any[], equityCurve: any[]) => void, defaultSymbol?: string }> = ({ onClose, onBacktestResult, defaultSymbol = 'BTCUSDT' }) => {
     const [activeTab, setActiveTab] = useState<'backtest' | 'sensitivity'>('backtest');
     const [config, setConfig] = useState({
+        symbol: defaultSymbol,
         horizon: 60,
         threshold: 0.7,
         sl: 0.01,
         tp: 0.02,
+        days: 30,
         initial_capital: 10000
     });
     const [loading, setLoading] = useState(false);
@@ -82,8 +84,10 @@ export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         setSensLoading(true);
         try {
             const res = await axios.post(`${API_URL}/api/v1/backtest/sensitivity`, {
+                symbol: config.symbol,
                 horizon: config.horizon,
-                threshold: config.threshold
+                threshold: config.threshold,
+                days: config.days
             });
             if (res.data.status === 'success') {
                 setSensitivityResults(res.data.results);
@@ -99,9 +103,11 @@ export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         setOptLoading(true);
         try {
             const res = await axios.post(`${API_URL}/api/v1/backtest/optimize`, {
+                symbol: config.symbol,
                 horizon: config.horizon,
                 sl: config.sl,
-                tp: config.tp
+                tp: config.tp,
+                days: config.days
             });
             if (res.data.status === 'success') {
                 setOptResults(res.data.results);
@@ -116,11 +122,14 @@ export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     const runBacktest = async () => {
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/v1/backtest`, config);
+            const res = await axios.post(`${API_URL}/api/v1/backtest/run`, config);
             if (res.data.status === 'success') {
                 setResult(res.data.results);
                 setTrades(res.data.trades);
                 setEquityCurve(res.data.equity_curve);
+                if (onBacktestResult) {
+                    onBacktestResult(res.data.results, res.data.trades, res.data.equity_curve);
+                }
             }
         } catch (error) {
             console.error("Backtest failed:", error);
@@ -263,6 +272,28 @@ export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                     <div className="w-full md:w-64 shrink-0 space-y-4">
                         <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
                             <div className="space-y-3">
+                                <label className="block text-sm text-[#848E9C]">交易对 (Symbol)</label>
+                                <input 
+                                    type="text" 
+                                    value={config.symbol}
+                                    onChange={(e) => setConfig({...config, symbol: e.target.value.toUpperCase()})}
+                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B] uppercase"
+                                />
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="block text-sm text-[#848E9C]">回测天数 (Days)</label>
+                                <input 
+                                    type="number" 
+                                    min="1"
+                                    max="365"
+                                    value={config.days}
+                                    onChange={(e) => setConfig({...config, days: parseInt(e.target.value)})}
+                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                />
+                            </div>
+
+                            <div className="space-y-3">
                                 <label className="block text-sm text-[#848E9C]">预测周期 (分钟)</label>
                                 <select 
                                     value={config.horizon}
@@ -291,6 +322,15 @@ export const BacktestPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
 
                         {activeTab === 'backtest' && (
                             <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
+                                <div className="space-y-3">
+                                    <label className="block text-sm text-[#848E9C]">初始资金 (USDT)</label>
+                                    <input 
+                                        type="number" 
+                                        value={config.initial_capital}
+                                        onChange={(e) => setConfig({...config, initial_capital: parseFloat(e.target.value)})}
+                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                    />
+                                </div>
                                 <div className="space-y-3">
                                     <label className="block text-sm text-[#848E9C]">止损比例 (%)</label>
                                     <input 

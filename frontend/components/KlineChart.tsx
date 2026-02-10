@@ -18,11 +18,27 @@ interface MAData {
     value: number;
 }
 
+interface Trade {
+    id: string;
+    timestamp: number;
+    datetime: string;
+    side: 'buy' | 'sell';
+    price: number;
+    amount: number;
+    cost: number;
+    fee: {
+        cost: number;
+        currency: string;
+    };
+    realized_pnl: number;
+}
+
 interface KlineChartProps {
     data: KlineData[];
     ma7?: MAData[];
     ma25?: MAData[];
     ma99?: MAData[];
+    trades?: Trade[];
     className?: string;
     colors?: {
         backgroundColor?: string;
@@ -38,6 +54,7 @@ export const KlineChart: React.FC<KlineChartProps> = ({
     ma7,
     ma25,
     ma99,
+    trades = [],
     className,
     colors = {
         backgroundColor: 'transparent',
@@ -50,10 +67,58 @@ export const KlineChart: React.FC<KlineChartProps> = ({
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+    const markersRef = useRef<any>(null);
     const ma7SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     const ma25SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     const ma99SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
+    const [tooltipData, setTooltipData] = useState<KlineData | null>(null);
+
+    // Helper to create markers from trades
+    const createMarkers = (tradesList: Trade[], candleData: KlineData[]) => {
+        if (!candleData || candleData.length === 0) return [];
+
+        // Get candle times (assuming sorted)
+        const candleTimes = candleData.map(d => d.time as number);
+
+        return tradesList.map(trade => {
+            const tradeTime = trade.timestamp / 1000;
+            
+            // Find the closest candle time <= tradeTime
+            // We want the candle that CONTAINS this trade.
+            // Since data is OHLCV for a period starting at 'time', 
+            // the trade belongs to the candle where candle.time <= tradeTime < next_candle.time
+            // So finding the last candle with time <= tradeTime is correct.
+            
+            let matchedTime: number | null = null;
+            
+            // Binary search or simple reverse iteration
+            // Since trades are few, reverse iteration is fine
+            for (let i = candleTimes.length - 1; i >= 0; i--) {
+                if (candleTimes[i] <= tradeTime) {
+                    matchedTime = candleTimes[i];
+                    break;
+                }
+            }
+            
+            if (matchedTime === null) return null; // Trade older than loaded data
+
+            const isBuy = trade.side === 'buy';
+            return {
+                time: matchedTime as UTCTimestamp,
+                position: (isBuy ? 'belowBar' : 'aboveBar') as any,
+                color: isBuy ? '#0ECB81' : '#F6465D',
+                shape: (isBuy ? 'arrowUp' : 'arrowDown') as any,
+                text: isBuy ? 'B' : 'S',
+                id: trade.id,
+                size: 2, // Slightly larger
+            };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .sort((a, b) => (a.time as number) - (b.time as number));
+    };
+
+    // Initialize Chart
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
@@ -76,6 +141,21 @@ export const KlineChart: React.FC<KlineChartProps> = ({
             grid: {
                 vertLines: { color: '#2B3139' },
                 horzLines: { color: '#2B3139' },
+            },
+            crosshair: {
+                mode: 1, // CrosshairMode.Normal
+                vertLine: {
+                    width: 1,
+                    color: '#848E9C',
+                    style: 3, // LineStyle.Dashed
+                    labelBackgroundColor: '#848E9C',
+                },
+                horzLine: {
+                    width: 1,
+                    color: '#848E9C',
+                    style: 3,
+                    labelBackgroundColor: '#848E9C',
+                },
             },
             rightPriceScale: {
                 borderColor: '#2B3139',
@@ -108,35 +188,57 @@ export const KlineChart: React.FC<KlineChartProps> = ({
         const ma99Series = chart.addSeries(LineSeries, { color: '#2962FF', lineWidth: 1, crosshairMarkerVisible: false });
         ma99SeriesRef.current = ma99Series;
 
-        if (data.length > 0) {
-            candlestickSeries.setData(data);
-        }
-        
-        if (ma7 && ma7.length > 0) ma7Series.setData(ma7);
-        if (ma25 && ma25.length > 0) ma25Series.setData(ma25);
-        if (ma99 && ma99.length > 0) ma99Series.setData(ma99);
+        // Subscribe to crosshair move
+        chart.subscribeCrosshairMove((param) => {
+            if (param.time && param.seriesData && seriesRef.current) {
+                const data = param.seriesData.get(seriesRef.current) as KlineData | undefined;
+                if (data) {
+                    setTooltipData(data);
+                }
+            } else {
+                 // On mouse leave or no data, verify if we should reset
+                 // For Binance style, we usually keep the last value or current candle.
+                 // We will NOT clear it.
+            }
+        });
 
         window.addEventListener('resize', handleResize);
         
-        // Also add ResizeObserver to handle container resize
         const resizeObserver = new ResizeObserver(() => handleResize());
         resizeObserver.observe(chartContainerRef.current);
-
-        // Fit content to ensure chart fills the width
-        chart.timeScale().fitContent();
 
         return () => {
             window.removeEventListener('resize', handleResize);
             resizeObserver.disconnect();
             chart.remove();
+            chartRef.current = null;
         };
-    }, [data, colors]); // Re-create chart when data changes (simple approach, better to use update methods but this works for now)
+    }, []); // Only run once on mount
 
-    // Effect to update data without destroying chart if chart instance exists
+    // Update Data
     useEffect(() => {
+        if (!chartRef.current) return;
+
         if (seriesRef.current && data.length > 0) {
+            // Save current visible logical range to preserve zoom
+            const timeScale = chartRef.current.timeScale();
+            const logicalRange = timeScale.getVisibleLogicalRange();
+            
             seriesRef.current.setData(data);
+
+            // Restore logical range if it exists and we have data
+            if (logicalRange) {
+                timeScale.setVisibleLogicalRange(logicalRange);
+            } else {
+                timeScale.fitContent();
+            }
+            
+            // Set initial tooltip data to latest candle if not set
+            if (!tooltipData) {
+                setTooltipData(data[data.length - 1]);
+            }
         }
+        
         if (ma7SeriesRef.current && ma7 && ma7.length > 0) {
             ma7SeriesRef.current.setData(ma7);
         }
@@ -146,12 +248,51 @@ export const KlineChart: React.FC<KlineChartProps> = ({
         if (ma99SeriesRef.current && ma99 && ma99.length > 0) {
             ma99SeriesRef.current.setData(ma99);
         }
-    }, [data, ma7, ma25, ma99]);
+
+        if (seriesRef.current && trades && trades.length > 0 && data.length > 0) {
+            try {
+                // Ensure trades are sorted and have valid timestamps
+                // Also, createMarkers handles the conversion.
+                const markers = createMarkers(trades, data);
+                (seriesRef.current as any).setMarkers(markers);
+            } catch (e) {
+                console.warn("setMarkers failed:", e);
+            }
+        }
+    }, [data, ma7, ma25, ma99, trades]); // Run when data changes
 
     return (
-        <div 
-            ref={chartContainerRef} 
-            className={twMerge("w-full h-full relative", className)}
-        />
+        <div className={twMerge("w-full h-full relative", className)}>
+            <div 
+                ref={chartContainerRef} 
+                className="w-full h-full"
+            />
+            {/* Tooltip Overlay - Binance Style Header */}
+            <div 
+                className="absolute top-2 left-2 flex gap-3 bg-[#1E2329]/90 p-1.5 rounded text-[#848E9C] font-mono text-xs select-none pointer-events-none shadow-sm"
+                style={{ zIndex: 50 }}
+            >
+                {tooltipData && (
+                    <>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
+                            O: <span className="text-[#EAECEF]">{tooltipData.open.toFixed(2)}</span>
+                        </span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
+                            H: <span className="text-[#EAECEF]">{tooltipData.high.toFixed(2)}</span>
+                        </span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
+                            L: <span className="text-[#EAECEF]">{tooltipData.low.toFixed(2)}</span>
+                        </span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
+                            C: <span className="text-[#EAECEF]">{tooltipData.close.toFixed(2)}</span>
+                        </span>
+                        {/* Calculate Change % */}
+                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
+                            Change: <span className="text-[#EAECEF]">{((tooltipData.close - tooltipData.open) / tooltipData.open * 100).toFixed(2)}%</span>
+                        </span>
+                    </>
+                )}
+            </div>
+        </div>
     );
 };

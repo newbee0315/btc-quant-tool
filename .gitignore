@@ -46,10 +46,19 @@ build/
 .docker/
 
 # Project Specific
+trader_config.json
+data/
 src/data/*.csv
-src/models/saved_models/*.joblib
-src/models/saved_models/model_metrics.json
+src/models/saved_models/
 backend_logs.txt
 frontend_logs.txt
 *.tar.gz
 *.exp
+
+# Runtime State
+feishu_data.json
+fetch_state.json
+notification_history.json
+backtest_equity.csv
+optimization_report.md
+.trae/
