@@ -3,6 +3,9 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, Any
 from .base_strategy import BaseStrategy
+from .czsc_analyzer import create_czsc_analyzer
+
+from czsc import Freq
 
 class TrendMLStrategy(BaseStrategy):
     """
@@ -13,15 +16,74 @@ class TrendMLStrategy(BaseStrategy):
     1. Trend Filter: EMA 200. Long if Price > EMA200, Short if Price < EMA200.
     2. Momentum Filter: RSI (14). Long if RSI < 70, Short if RSI > 30.
     3. ML Confirmation: Only enter if ML Model predicts high probability (> threshold).
+    4. CZSC Filter (Optional): Use Chanlun patterns (Fenxing, Bi, Divergence) to confirm entries.
     """
     
-    def __init__(self, ema_period: int = 200, rsi_period: int = 14, ml_threshold: float = 0.75, atr_period: int = 14):
+    def __init__(self, ema_period: int = 200, rsi_period: int = 14, ml_threshold: float = 0.75, atr_period: int = 14, enable_czsc: bool = True):
         super().__init__("TrendMLStrategy")
         self.ema_period = ema_period
         self.rsi_period = rsi_period
         self.ml_threshold = ml_threshold
         self.atr_period = atr_period
+        self.enable_czsc = enable_czsc
         self.logs = []  # Buffer to store strategy execution logs
+        
+        # CZSC 缠论分析器 (多时间级别)
+        if self.enable_czsc:
+            self.czsc_analyzer_5m = create_czsc_analyzer(freq="5min")
+            self.czsc_analyzer_30m = create_czsc_analyzer(freq="30min")
+            self.czsc_analyzer_1h = create_czsc_analyzer(freq="60min")
+
+    def _get_chan_bullish_signal(self, chan_analysis_5m: Dict[str, Any], chan_analysis_30m: Dict[str, Any]) -> bool:
+        """获取缠论多头信号"""
+        # 简化的多头信号逻辑
+        # 实际应用中应该基于分型、笔、中枢等结构进行复杂判断
+        
+        # 检查底分型
+        if chan_analysis_5m['fenxing'].get('has_fenxing', False) and \
+           chan_analysis_5m['fenxing'].get('type') == '底分型':
+            return True
+        
+        # 检查向上笔
+        if chan_analysis_5m['bi'].get('has_bi', False) and \
+           chan_analysis_5m['bi'].get('direction') == '向上笔':
+            return True
+            
+        # 多时间级别确认
+        if chan_analysis_30m['fenxing'].get('has_fenxing', False) and \
+           chan_analysis_30m['fenxing'].get('type') == '底分型':
+            return True
+            
+        return False
+    
+    def _get_chan_bearish_signal(self, chan_analysis_5m: Dict[str, Any], chan_analysis_30m: Dict[str, Any]) -> bool:
+        """获取缠论空头信号"""
+        # 检查顶分型
+        if chan_analysis_5m['fenxing'].get('has_fenxing', False) and \
+           chan_analysis_5m['fenxing'].get('type') == '顶分型':
+            return True
+        
+        # 检查向下笔
+        if chan_analysis_5m['bi'].get('has_bi', False) and \
+           chan_analysis_5m['bi'].get('direction') == '向下笔':
+            return True
+            
+        # 多时间级别确认
+        if chan_analysis_30m['fenxing'].get('has_fenxing', False) and \
+           chan_analysis_30m['fenxing'].get('type') == '顶分型':
+            return True
+            
+        return False
+    
+    def _get_consolidation_signal(self, chan_analysis: Dict[str, Any]) -> bool:
+        """获取中枢整理信号"""
+        # 检查中枢是否存在
+        if chan_analysis['zs'].get('has_zs', False):
+            # 中枢范围较小，表明整理状态
+            zs_range_pct = chan_analysis['zs'].get('range_pct', 0)
+            if zs_range_pct < 2.0:  # 中枢范围小于2%
+                return True
+        return False
 
     def log_execution(self, timestamp, close_price, ema_trend, rsi, ml_prob, signal, reasons, sl=0, tp=0, macd=0, macd_signal=0, macd_hist=0):
         """Buffer execution log"""
@@ -92,6 +154,29 @@ class TrendMLStrategy(BaseStrategy):
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = np.max(ranges, axis=1)
         df['atr'] = true_range.rolling(self.atr_period).mean()
+
+        # Calculate ADX (14) - Simplified using EMA
+        # +DM and -DM
+        up = df['high'] - df['high'].shift(1)
+        down = df['low'].shift(1) - df['low']
+        
+        plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+        minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+        
+        # Smooth DM and TR using EMA (Wilder's smoothing approx alpha=1/14)
+        alpha = 1.0 / 14.0
+        df['_tr_smooth'] = true_range.ewm(alpha=alpha, adjust=False).mean()
+        df['_plus_dm_smooth'] = pd.Series(plus_dm, index=df.index).ewm(alpha=alpha, adjust=False).mean()
+        df['_minus_dm_smooth'] = pd.Series(minus_dm, index=df.index).ewm(alpha=alpha, adjust=False).mean()
+        
+        # Calculate DI
+        df['plus_di'] = 100 * (df['_plus_dm_smooth'] / df['_tr_smooth'])
+        df['minus_di'] = 100 * (df['_minus_dm_smooth'] / df['_tr_smooth'])
+        
+        # Calculate DX and ADX
+        dx = 100 * np.abs(df['plus_di'] - df['minus_di']) / (df['plus_di'] + df['minus_di'])
+        df['adx'] = dx.ewm(alpha=alpha, adjust=False).mean()
+
         
         # Calculate Volume MA (20)
         df['vol_ma'] = df['volume'].rolling(window=20).mean()
@@ -100,6 +185,57 @@ class TrendMLStrategy(BaseStrategy):
         df['returns'] = df['close'].pct_change()
         df['volatility'] = df['returns'].rolling(window=20).std()
         df['atr_ma'] = df['atr'].rolling(window=50).mean()
+        
+        # CZSC 缠论分析 - 使用完整的CZSC库进行分析
+        # 分析结果将在get_signal方法中使用
+        if self.enable_czsc:
+            # 初始化信号列
+            df['czsc_bullish'] = False
+            df['czsc_bearish'] = False
+            
+            # 重置分析器状态 (确保回测独立性)
+            self.czsc_analyzer_5m.czsc_objects = {}
+            
+            # 将 df 转换为 RawBar 列表
+            # 注意：这里假设 df 的频率与分析器频率匹配或兼容
+            bars = self.czsc_analyzer_5m.convert_to_raw_bars(df, "BACKTEST")
+            rsi_values = df['rsi'].fillna(50).values
+            
+            czsc_bullish_list = []
+            czsc_bearish_list = []
+            
+            for i, bar in enumerate(bars):
+                # 更新分析器
+                self.czsc_analyzer_5m.update_one_bar(bar)
+                
+                # 获取结果
+                res = self.czsc_analyzer_5m.get_analysis_result("BACKTEST")
+                current_rsi = rsi_values[i]
+                
+                # 检查底背驰 + 底分型
+                is_bullish = False
+                if res['divergence']['has_divergence'] and res['divergence']['type'] == '底背驰':
+                    is_bullish = True
+                elif res['fenxing']['has_fenxing'] and res['fenxing']['type'] == '底分型':
+                    # 只有底分型可能不够强，结合 RSI
+                    if current_rsi < 45: 
+                         is_bullish = True
+                
+                # 检查顶背驰 + 顶分型
+                is_bearish = False
+                if res['divergence']['has_divergence'] and res['divergence']['type'] == '顶背驰':
+                    is_bearish = True
+                elif res['fenxing']['has_fenxing'] and res['fenxing']['type'] == '顶分型':
+                     if current_rsi > 55:
+                         is_bearish = True
+                    
+                czsc_bullish_list.append(is_bullish)
+                czsc_bearish_list.append(is_bearish)
+                
+            df['czsc_bullish'] = czsc_bullish_list
+            df['czsc_bearish'] = czsc_bearish_list
+
+
         
         return df
 
@@ -115,6 +251,7 @@ class TrendMLStrategy(BaseStrategy):
         ema_fast = row.get('ema_fast', 0)
         rsi = row['rsi']
         atr = row.get('atr', 0)
+        adx = row.get('adx', 0)
         atr_ma = row.get('atr_ma', atr)
         volatility = row.get('volatility', 0)
         
@@ -167,49 +304,120 @@ class TrendMLStrategy(BaseStrategy):
         is_ha_bearish = ha_close < ha_open
         
         # ML Consensus (Adaptive Threshold)
-        # Optimized: Lower threshold to 0.75 base to catch more moves
-        effective_threshold = 0.75 
+        # Optimized: Lower threshold to 0.65 base to catch more moves (Higher Frequency)
+        effective_threshold = 0.65
         
-        if market_mode == 'low': effective_threshold = 0.8
-        if market_mode == 'high': effective_threshold = 0.85
+        if market_mode == 'low': effective_threshold = 0.70
+        if market_mode == 'high': effective_threshold = 0.75
         
         is_ml_bullish = ml_prob >= effective_threshold
         is_ml_bearish = ml_prob <= (1 - effective_threshold)
         
-        # Secondary confirmation (looser threshold, e.g. > 0.6 for bull, < 0.4 for bear)
-        is_ml10_bullish = ml_prob_10m > 0.6
-        is_ml10_bearish = ml_prob_10m < 0.4
+        # Secondary confirmation (looser threshold, e.g. > 0.55 for bull, < 0.45 for bear)
+        is_ml10_bullish = ml_prob_10m > 0.55
+        is_ml10_bearish = ml_prob_10m < 0.45
         
+        # CZSC 缠论模式识别 (第四信号组件)
+        is_chan_bullish = False
+        is_chan_bearish = False
+        is_consolidation = False
+        
+        if self.enable_czsc:
+            is_chan_bullish = row.get('czsc_bullish', False)
+            is_chan_bearish = row.get('czsc_bearish', False)
+            
         # Long Logic
         # Use HA Close for smoother trend check
         is_uptrend = ha_close > ema_trend 
-        is_rsi_safe_long = rsi < 70
+        is_rsi_safe_long = rsi < 75 # Relaxed from 70
+        is_strong_adx = adx > 15 # Relaxed from 20 for more signals
         is_macd_bullish = macd_hist > 0 and macd_hist > prev_macd_hist
         
-        if is_uptrend and is_ha_bullish and is_rsi_safe_long and is_macd_bullish and is_ml_bullish:
+        # 缠论增强: 底分型确认或中枢突破
+        is_chan_confirmed_long = False
+        if self.enable_czsc:
+            is_chan_confirmed_long = is_chan_bullish
+        
+        # 缠论信号过滤条件:
+        # 如果启用缠论，仅靠缠论信号入场需要有成交量支持，或者与ML共振
+        # 纯缠论信号: (is_chan_confirmed_long and is_volume_support)
+        # 混合信号: (is_ml_bullish or (is_chan_confirmed_long and is_volume_support))
+        
+        should_enter_long = is_ml_bullish
+        if is_chan_confirmed_long and is_volume_support:
+             should_enter_long = True
+
+        # Standard Trend Logic
+        # CZSC Filter: Don't enter Long if CZSC is Bearish (Top Divergence/Sell Point)
+        if self.enable_czsc and is_chan_bearish:
+             should_enter_long = False
+
+        if is_uptrend and is_ha_bullish and is_rsi_safe_long and is_macd_bullish and should_enter_long and is_strong_adx:
             signal = 1
             reason.append(f"HA价格>EMA200")
             reason.append(f"HA阳线")
+            reason.append(f"ADX>20")
             reason.append(f"RSI({rsi:.1f})<70")
             reason.append(f"MACD金叉增强")
-            reason.append(f"ML30m({ml_prob:.2f})>=Threshold")
+            if is_ml_bullish:
+                reason.append(f"ML30m({ml_prob:.2f})>=Threshold")
+            if is_chan_confirmed_long:
+                reason.append(f"缠论买点+放量确认")
             if is_ml10_bullish:
                 reason.append(f"ML10m({ml_prob_10m:.2f})确认")
         
+        # CZSC Reversal Logic (Bypass EMA Trend)
+        elif self.enable_czsc and is_chan_confirmed_long and is_volume_support and is_ha_bullish and is_rsi_safe_long:
+            # Parameter Tuning: Stricter ML confirmation for reversals (was 0.65)
+            if ml_prob > 0.70: 
+                signal = 1
+                reason.append(f"缠论底背驰/分型反转")
+                reason.append(f"放量确认")
+                reason.append(f"HA阳线")
+                reason.append(f"ML确认({ml_prob:.2f})>0.7")
+        
         # Short Logic
         is_downtrend = ha_close < ema_trend
-        is_rsi_safe_short = rsi > 30
+        is_rsi_safe_short = rsi > 25 # Relaxed from 30
         is_macd_bearish = macd_hist < 0 and macd_hist < prev_macd_hist
         
-        if is_downtrend and is_ha_bearish and is_rsi_safe_short and is_macd_bearish and is_ml_bearish:
+        # 缠论增强: 顶分型确认或中枢跌破
+        is_chan_confirmed_short = False
+        if self.enable_czsc:
+            is_chan_confirmed_short = is_chan_bearish
+            
+        should_enter_short = is_ml_bearish
+        if is_chan_confirmed_short and is_volume_support:
+             should_enter_short = True
+        
+        # CZSC Filter: Don't enter Short if CZSC is Bullish (Bottom Divergence/Buy Point)
+        if self.enable_czsc and is_chan_bullish:
+             should_enter_short = False
+
+        if is_downtrend and is_ha_bearish and is_rsi_safe_short and is_macd_bearish and should_enter_short and is_strong_adx:
             signal = -1
             reason.append(f"HA价格<EMA200")
             reason.append(f"HA阴线")
+            reason.append(f"ADX>20")
             reason.append(f"RSI({rsi:.1f})>30")
             reason.append(f"MACD死叉增强")
-            reason.append(f"ML30m({ml_prob:.2f})<=Threshold")
+            if is_ml_bearish:
+                reason.append(f"ML30m({ml_prob:.2f})<=Threshold")
+            if is_chan_confirmed_short:
+                reason.append(f"缠论卖点+放量确认")
             if is_ml10_bearish:
                 reason.append(f"ML10m({ml_prob_10m:.2f})确认")
+        
+        # CZSC Reversal Logic (Bypass EMA Trend)
+        elif self.enable_czsc and is_chan_confirmed_short and is_volume_support and is_ha_bearish and is_rsi_safe_short:
+            # Parameter Tuning: Stricter ML confirmation for reversals (was 0.35)
+            if ml_prob < 0.30: 
+                signal = -1
+                reason.append(f"缠论顶背驰/分型反转")
+                reason.append(f"放量确认")
+                reason.append(f"HA阴线")
+                reason.append(f"ML确认({ml_prob:.2f})<0.3")
+
 
         # -----------------------------------------------------------
         # High Frequency Scalping Mode (Added to increase frequency)
@@ -217,33 +425,43 @@ class TrendMLStrategy(BaseStrategy):
         if signal == 0:
             # Scalp Long
             # 1. Trend: HA > EMA50 (Shorter term trend)
-            # 2. ML: 10m Probability > 0.65 (Stronger short-term confidence)
+            # 2. ML: 10m Probability > 0.60 (Stronger short-term confidence, relaxed from 0.65)
             # 3. RSI: Not overbought (< 75)
             # 4. Volume: Above average (Confirmation)
+            # 5. CZSC: No Bearish Signal (Filter)
             is_scalp_trend_up = ha_close > ema_fast
-            is_ml10_strong_bull = ml_prob_10m >= 0.65
+            is_ml10_strong_bull = ml_prob_10m >= 0.60
             is_rsi_scalp_long = rsi < 75
             
-            if is_scalp_trend_up and is_ml10_strong_bull and is_rsi_scalp_long and is_volume_support:
+            czsc_filter_pass_long = True
+            if self.enable_czsc and is_chan_bearish:
+                 czsc_filter_pass_long = False # 缠论看空时不做多
+            
+            if is_scalp_trend_up and is_ml10_strong_bull and is_rsi_scalp_long and is_volume_support and czsc_filter_pass_long:
                 signal = 1
                 reason.append(f"[Scalp]HA>EMA50")
-                reason.append(f"ML10m({ml_prob_10m:.2f})>=0.65")
+                reason.append(f"ML10m({ml_prob_10m:.2f})>=0.60")
                 reason.append(f"Vol>MA")
                 reason.append(f"RSI({rsi:.1f})")
 
             # Scalp Short
             # 1. Trend: HA < EMA50
-            # 2. ML: 10m Probability < 0.35
+            # 2. ML: 10m Probability < 0.40 (Relaxed from 0.35)
             # 3. RSI: Not oversold (> 25)
             # 4. Volume: Above average
+            # 5. CZSC: No Bullish Signal (Filter)
             is_scalp_trend_down = ha_close < ema_fast
-            is_ml10_strong_bear = ml_prob_10m <= 0.35
+            is_ml10_strong_bear = ml_prob_10m <= 0.40
             is_rsi_scalp_short = rsi > 25
             
-            if is_scalp_trend_down and is_ml10_strong_bear and is_rsi_scalp_short and is_volume_support:
+            czsc_filter_pass_short = True
+            if self.enable_czsc and is_chan_bullish:
+                 czsc_filter_pass_short = False # 缠论看多时不做空
+            
+            if is_scalp_trend_down and is_ml10_strong_bear and is_rsi_scalp_short and is_volume_support and czsc_filter_pass_short:
                 signal = -1
                 reason.append(f"[Scalp]HA<EMA50")
-                reason.append(f"ML10m({ml_prob_10m:.2f})<=0.35")
+                reason.append(f"ML10m({ml_prob_10m:.2f})<=0.40")
                 reason.append(f"Vol>MA")
                 reason.append(f"RSI({rsi:.1f})")
         
@@ -263,7 +481,7 @@ class TrendMLStrategy(BaseStrategy):
                 reason.append("观望中")
 
 
-        # 4. Multi-Mode Risk Management
+        # 4. Multi-Mode Risk Management (Risk-Based Position Sizing)
         sl_price = 0.0
         tp_price = 0.0
         suggested_leverage = 1.0
@@ -272,74 +490,70 @@ class TrendMLStrategy(BaseStrategy):
         if signal != 0 and atr > 0:
             total_capital = extra_data.get('total_capital', 10.0) if extra_data else 10.0
             
-            # Default Params (Normal Mode)
-            lev_range = [8, 15] # Optimized: Increased upper range
-            pos_pct_range = [0.3, 0.6]
-            sl_mode = "atr"
-            sl_mult = 2.0 # Optimized: Widened from 1.5
-            tp_mult = 2.5
+            # Risk Parameters
+            risk_per_trade_pct = 0.02 # Max 2% loss of total capital per trade
+            
+            # Risk Management: Dynamic Risk based on Volatility (ATR %)
+            atr_pct = atr / close_price
+            if atr_pct > 0.02: # High volatility > 2% ATR
+                risk_per_trade_pct = 0.015
+            if atr_pct > 0.04: # Extreme volatility
+                risk_per_trade_pct = 0.01
+            
+            # Reduce risk for Reversal trades (Counter-trend)
+            if any("缠论" in r for r in reason):
+                risk_per_trade_pct = min(risk_per_trade_pct, 0.015)
+            
+            # Calculate SL Distance based on Mode
+            sl_mult = 3.0
+            tp_mult = 4.0
+            min_sl_pct = 0.018 # 1.8% minimum (User Rule: Loss >= 1.8% then stop)
             
             if market_mode == 'low':
-                lev_range = [5, 8] # Optimized: Increased from 3-5
-                pos_pct_range = [0.2, 0.3]
-                sl_mode = "fixed"
-                sl_fixed_pct = 0.02 # Optimized: Widened
-                tp_fixed_pct = 0.015
-                
+                sl_mult = 6.0 # Extremely wide SL to avoid noise
+                tp_mult = 1.0 # Not used for TP dist (fixed), but good for reference
             elif market_mode == 'high':
-                lev_range = [15, 30] # Optimized: Increased max to 30x
-                pos_pct_range = [0.7, 0.9]
-                sl_mode = "atr"
-                sl_mult = 1.5 # Optimized: Widened from 1.0
-                tp_mult = 5.0 
+                sl_mult = 3.0 # Widen SL for volatility
+                tp_mult = 6.0 # Breakout: hold position, wide TP
                 
-            # Calculate Leverage (Base + Boosters)
-            base_leverage = lev_range[0]
-            extra_leverage = 0
-            
-            # 1. Trend Booster
-            if signal == 1 and is_strong_uptrend: extra_leverage += 3
-            elif signal == -1 and is_strong_downtrend: extra_leverage += 3
-            
-            # 2. Volume Booster
-            if is_volume_support: extra_leverage += 2
-            
-            # 3. High Confidence Booster
-            if ml_prob > 0.85: 
-                base_leverage = int(base_leverage * 1.5) # 50% boost for high confidence
-                extra_leverage += 5
-            
-            suggested_leverage = min(lev_range[1], base_leverage + extra_leverage)
-            
-            # Adaptive Stop Loss (Widen for high confidence)
+            # Adaptive SL for High Confidence
             if ml_prob > 0.8:
-                sl_mult += 0.5
+                tp_mult += 1.0 # Aim for higher reward, keep SL tight
             
-            # Calculate Position Size (Dynamic based on ML confidence)
-            # Higher confidence -> Higher end of pos_pct_range
-            confidence_score = (ml_prob - 0.5) * 2 # 0 to 1
-            pos_pct = pos_pct_range[0] + (pos_pct_range[1] - pos_pct_range[0]) * confidence_score
-            pos_pct = min(pos_pct_range[1], max(pos_pct_range[0], pos_pct))
+            sl_dist = atr * sl_mult
             
-            margin_amount = total_capital * pos_pct
-            position_value = margin_amount * suggested_leverage
+            # Enforce Min/Max SL distance
+            if (sl_dist / close_price) < min_sl_pct:
+                sl_dist = close_price * min_sl_pct
+            
+            # Calculate Position Size based on Risk
+            # Risk Amount = Total Capital * Risk %
+            # Position Value * (SL Distance / Price) = Risk Amount
+            # Position Value = Risk Amount / (SL Distance / Price)
+            risk_amount = total_capital * risk_per_trade_pct
+            sl_pct = sl_dist / close_price
+            
+            target_position_value = risk_amount / sl_pct
+            
+            # Cap Position Value by Max Leverage
+            max_leverage = 10.0
+            # if market_mode == 'low': max_leverage = 10.0 # Optional: tighter for low vol?
+            # if market_mode == 'high': max_leverage = 15.0 
+            
+            max_position_value = total_capital * max_leverage
+            position_value = min(target_position_value, max_position_value)
+            
+            # Calculate suggested leverage for this position
+            suggested_leverage = max_leverage 
+            
+            # Final Position Size
             position_size = position_value / close_price
             
-            # Calculate SL/TP
-            sl_dist = 0
-            tp_dist = 0
+            tp_dist = sl_dist * (tp_mult / sl_mult) # Maintain R:R ratio
             
-            if sl_mode == 'fixed':
-                sl_dist = close_price * sl_fixed_pct
-                tp_dist = close_price * tp_fixed_pct
-            else:
-                sl_dist = atr * sl_mult
-                tp_dist = atr * tp_mult
-                # Min SL check for BTC
-                min_sl_pct = 0.015
-                if (sl_dist / close_price) < min_sl_pct:
-                     sl_dist = close_price * min_sl_pct
-                     tp_dist = max(tp_dist, sl_dist * 1.5)
+            # Special case for Scalp Mode: Fixed TP % (0.5%)
+            if market_mode == 'low':
+                tp_dist = close_price * 0.005 # Fixed 0.5% TP for high win rate scalping
 
             if signal == 1:
                 sl_price = close_price - sl_dist
@@ -349,7 +563,7 @@ class TrendMLStrategy(BaseStrategy):
                 tp_price = close_price - tp_dist
                 
             reason.append(f"模式:{market_mode}")
-            reason.append(f"仓位:{int(pos_pct*100)}%")
+            reason.append(f"风险:{risk_per_trade_pct*100}%")
             reason.append(f"杠杆:{suggested_leverage}x")
 
         # Log execution
@@ -375,7 +589,9 @@ class TrendMLStrategy(BaseStrategy):
                 "ema": ema_trend,
                 "rsi": rsi,
                 "atr": atr,
-                "ml_prob": ml_prob
+                "ml_prob": ml_prob,
+                "macd_hist": macd_hist,
+                "adx": adx
             },
             "trade_params": {
                 "sl_price": sl_price,

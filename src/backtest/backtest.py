@@ -29,13 +29,13 @@ class SmartBacktester:
     - Integration with TrendMLStrategy
     """
     
-    def __init__(self, initial_capital=1000.0, fee_rate=0.0005, symbol='BTCUSDT', proxy_url=None):
+    def __init__(self, initial_capital=1000.0, fee_rate=0.0005, symbol='BTCUSDT', proxy_url=None, enable_czsc=False):
         self.initial_capital = initial_capital
         self.fee_rate = fee_rate
         self.symbol = symbol
         
         # Components
-        self.strategy = TrendMLStrategy()
+        self.strategy = TrendMLStrategy(enable_czsc=enable_czsc)
         self.predictor = PricePredictor(symbol=symbol)
         
         proxies = None
@@ -257,7 +257,8 @@ class SmartBacktester:
                     'margin': margin_to_use,
                     'fee_entry': fee,
                     'sl_price': sl_price,
-                    'tp_price': tp_price
+                    'tp_price': tp_price,
+                    'entry_reason': result.get('reason', [])
                 }
                 
             # Track Equity
@@ -349,6 +350,7 @@ class SmartBacktester:
             "fee": fee + position['fee_entry'],
             "realized_pnl": pnl - (fee + position['fee_entry']),
             "reason": reason,
+            "entry_reason": position.get('entry_reason', []),
             "balance_after": balance
         })
         

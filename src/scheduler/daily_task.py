@@ -208,7 +208,8 @@ class DailyUpdateManager:
             f"策略优化: {opt_summary}\n"
             f"耗时: {duration:.2f}s"
         )
-        await self.feishu.send_text(msg)
+        # await self.feishu.send_text(msg)
+        pass
 
     async def _notify_failure(self, error_msg):
         beijing_tz = pytz.timezone('Asia/Shanghai')
@@ -219,7 +220,8 @@ class DailyUpdateManager:
             f"时间: {bj_time}\n"
             f"错误信息: {error_msg}"
         )
-        await self.feishu.send_text(msg)
+        # await self.feishu.send_text(msg)
+        pass
 
 if __name__ == "__main__":
     # Test run

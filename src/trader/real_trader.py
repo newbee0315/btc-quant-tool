@@ -2,19 +2,33 @@ import ccxt
 import logging
 import os
 import json
+import time
 from datetime import datetime
 from typing import Dict, Optional
 
 from src.notification.feishu import FeishuBot
+from src.utils.history_recorder import EquityRecorder
+from src.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
 
 class RealTrader:
-    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1, notifier: Optional[FeishuBot] = None, api_key: str = None, api_secret: str = None, proxy_url: str = None):
+    def __init__(self, symbol: str = "BTC/USDT", leverage: int = 1, notifier: Optional[FeishuBot] = None, api_key: str = None, api_secret: str = None, proxy_url: str = None, monitored_symbols: list = None):
         self.symbol = symbol
-        self.leverage = leverage
+        self.monitored_symbols = monitored_symbols if monitored_symbols else [symbol]
+        self.trade_history_cache = []
+        self.last_history_update = 0
+        self.leverage = min(leverage, 10)
         self.notifier = notifier
         self.proxy_url = proxy_url
+        self.equity_recorder = EquityRecorder()
+        self.config_manager = config_manager
+        
+        # Cache for get_status
+        self.cached_status = None
+        self.last_status_update = 0
+        self.status_cache_ttl = 5 # seconds
+
         # Read amount from env, default to 20 USDT
         self.amount_usdt = float(os.getenv("TRADE_AMOUNT_USDT", "20.0")) 
         
@@ -43,13 +57,14 @@ class RealTrader:
                 'options': {
                     'defaultType': 'swap',  # Use Swap (Perpetual) API
                     'adjustForTimeDifference': True,
+                    'recvWindow': 10000,
                     'fetchCurrencies': False, # Disable fetching currencies to avoid hitting sapi/api endpoints
                 },
                 'has': {
                     'fetchCurrencies': False
                 },
                 'enableRateLimit': True,
-                'timeout': 30000,
+                'timeout': 60000, # Increased timeout to 60s
             }
             
             if self.proxy_url:
@@ -61,15 +76,32 @@ class RealTrader:
                 
             self.exchange = ccxt.binanceusdm(options)
             logger.info("ccxt instance created")
+            # Sync time difference to avoid timestamp errors
+            try:
+                self._sync_time_offset()
+            except Exception as e:
+                logger.warning(f"Failed to sync time offset: {e}")
             # Load markets to check connectivity
             self.exchange.load_markets()
             logger.info("Connected to Binance Futures Real Trading")
             
-            # Set leverage
+            # Set leverage with fallback logic
             try:
                 self.exchange.set_leverage(self.leverage, self.symbol)
             except Exception as e:
-                logger.warning(f"Could not set leverage: {e}")
+                logger.warning(f"Could not set leverage {self.leverage}x: {e}. Retrying with fallback...")
+                try:
+                    self.exchange.set_leverage(10, self.symbol)
+                    self.leverage = 10
+                    logger.info("Fallback: Leverage set to 10x")
+                except Exception as e2:
+                    logger.warning(f"Could not set leverage 10x: {e2}. Retrying with 5x...")
+                    try:
+                        self.exchange.set_leverage(5, self.symbol)
+                        self.leverage = 5
+                        logger.info("Fallback: Leverage set to 5x")
+                    except Exception as e3:
+                        logger.error(f"Failed to set leverage (Initial, 10x, 5x): {e3}")
                 
             self.active = True
             self.last_connection_status = "Connected"
@@ -86,6 +118,87 @@ class RealTrader:
         self.start_time = datetime.now()
         self.initial_balance = None # Will be set on first balance fetch or config
         self.position_highs = {} # Track highest price for dynamic exit
+        self.position_entry_times = {} # Track entry time for active positions from history analysis
+        self.open_orders_count = 0 # Track open orders count
+        # Backoff configuration
+        self._max_retry = 5
+        self._base_backoff = 1.0
+
+    def _is_rate_limit_error(self, e: Exception) -> bool:
+        msg = str(e).lower()
+        return ('rate limit' in msg) or ('too many' in msg) or ('429' in msg) or ('-1003' in msg)
+
+    def _is_timestamp_error(self, e: Exception) -> bool:
+        msg = str(e).lower()
+        return ('-1021' in msg) or ('timestamp for this request' in msg) or ('time difference' in msg)
+
+    def _sync_time_offset(self):
+        """Align local clock with exchange by computing timeDifference (ms)."""
+        server_ms = self.exchange.fetch_time()
+        local_ms = int(time.time() * 1000)
+        # Positive when local clock is ahead of server
+        self.exchange.timeDifference = local_ms - server_ms
+        logger.info(f"[TimeSync] timeDifference set to {self.exchange.timeDifference} ms (local - server)")
+
+    def _safe_exchange_call(self, method: str, *args, **kwargs):
+        attempts = 0
+        last_exc = None
+        while attempts < self._max_retry:
+            try:
+                func = getattr(self.exchange, method)
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_exc = e
+                if self._is_timestamp_error(e):
+                    try:
+                        self._sync_time_offset()
+                        logger.warning(f"[TimeSync] Adjusted timeDifference={getattr(self.exchange, 'timeDifference', 'unknown')} ms due to -1021")
+                    except Exception as te:
+                        logger.warning(f"[TimeSync] Failed to sync time offset: {te}")
+                    time.sleep(1.0)
+                    attempts += 1
+                    continue
+                if self._is_rate_limit_error(e):
+                    attempts += 1
+                    sleep_s = min(self._base_backoff * (2 ** (attempts - 1)), 30)
+                    logger.warning(f"[Backoff] {method} rate-limited. Attempt {attempts}/{self._max_retry}. Sleep {sleep_s:.1f}s")
+                    time.sleep(sleep_s)
+                    continue
+                else:
+                    raise
+        raise last_exc
+
+    def record_equity(self):
+        """Record current equity state to history file."""
+        if not self.exchange: return
+        try:
+            balance = self.exchange.fetch_balance()
+            if balance:
+                info = balance.get('info', {})
+                # Try to get Total Equity (Margin Balance)
+                if 'totalMarginBalance' in info:
+                    total_equity = float(info['totalMarginBalance'])
+                else:
+                    total_equity = float(balance.get('total', {}).get('USDT', 0.0))
+                
+                # Try to get Wallet Balance
+                if 'totalWalletBalance' in info:
+                    total_balance = float(info['totalWalletBalance'])
+                else:
+                    total_balance = float(balance.get('free', {}).get('USDT', 0.0))
+                
+                # Try to get Unrealized PnL
+                if 'totalUnrealizedProfit' in info:
+                    unrealized_pnl = float(info['totalUnrealizedProfit'])
+                else:
+                    unrealized_pnl = 0.0
+                
+                self.equity_recorder.record(total_equity, total_balance, unrealized_pnl)
+                logger.info(f"Recorded equity: {total_equity} (Wallet: {total_balance}, PnL: {unrealized_pnl})")
+            else:
+                logger.warning("Could not record equity: Failed to fetch balance.")
+        except Exception as e:
+            logger.error(f"Failed to record equity: {e}")
 
     def get_balance(self):
         if not self.exchange:
@@ -135,24 +248,39 @@ class RealTrader:
             return {}
         
         try:
-            # Fetch all positions (no symbol filter)
-            positions = self.exchange.fetch_positions()
+            # 1. Fetch all positions first
+            positions = self._safe_exchange_call('fetch_positions')
+            logger.info(f"DEBUG: fetch_positions() returned {len(positions)} positions")
             
-            # Fetch all open orders to find SL/TP
+            # 2. Identify active symbols to fetch orders for
+            active_symbols = []
+            for pos in positions:
+                if float(pos['contracts']) > 0:
+                    active_symbols.append(pos['symbol'])
+
+            # 3. Fetch Open Orders
+            # Try to fetch ALL open orders first to save API calls
+            open_orders = []
             try:
-                open_orders = self.exchange.fetch_open_orders()
+                open_orders = self._safe_exchange_call('fetch_open_orders')
             except Exception as e:
-                logger.warning(f"Could not fetch all open orders: {e}")
-                open_orders = []
+                for sym in active_symbols:
+                    try:
+                        orders = self._safe_exchange_call('fetch_open_orders', sym)
+                        open_orders.extend(orders)
+                    except Exception as e2:
+                        logger.warning(f"Failed to fetch open orders for {sym}: {e2}")
                 
-            # NEW: Fetch Algo Orders (SL/TP)
+            # 4. Fetch Algo Orders (SL/TP often reside here for some strategies)
             algo_orders = []
             try:
-                # Use raw call for algo orders which are not returned by fetch_open_orders
-                raw_algos = self.exchange.fapiPrivateGetOpenAlgoOrders()
+                raw_algos = self._safe_exchange_call('fapiPrivateGetOpenAlgoOrders')
                 algo_orders = raw_algos
             except Exception as e:
                 logger.warning(f"Could not fetch algo orders: {e}")
+
+            # Update open orders count
+            self.open_orders_count = len(open_orders) + len(algo_orders)
 
             # Map open orders to symbols
             orders_by_symbol = {}
@@ -162,17 +290,20 @@ class RealTrader:
 
             for order in open_orders:
                 sym = order['symbol']
-                if sym not in orders_by_symbol:
-                    orders_by_symbol[sym] = {'sl': 0.0, 'tp': 0.0}
+                # Normalize symbol for key
+                norm_sym = sym.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                
+                if norm_sym not in orders_by_symbol:
+                    orders_by_symbol[norm_sym] = {'sl': 0.0, 'tp': 0.0}
                 
                 order_type = order.get('type')
                 stop_price = float(order.get('stopPrice', 0.0))
                 
                 if stop_price > 0:
                      if 'STOP' in order_type: # STOP, STOP_MARKET
-                         orders_by_symbol[sym]['sl'] = stop_price
+                         orders_by_symbol[norm_sym]['sl'] = stop_price
                      elif 'TAKE_PROFIT' in order_type: # TAKE_PROFIT, TAKE_PROFIT_MARKET
-                         orders_by_symbol[sym]['tp'] = stop_price
+                         orders_by_symbol[norm_sym]['tp'] = stop_price
 
             # Process Algo Orders
             for algo in algo_orders:
@@ -231,23 +362,42 @@ class RealTrader:
                     sl_price = 0.0
                     tp_price = 0.0
                     
-                    # Direct lookup (Standard Orders)
-                    if symbol in orders_by_symbol:
-                        sl_price = orders_by_symbol[symbol]['sl']
-                        tp_price = orders_by_symbol[symbol]['tp']
-                    
-                    # Fallback lookup (Algo Orders) via raw symbol
                     # Normalize symbol: SOL/USDT:USDT -> SOLUSDT
                     raw_symbol_lookup = symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                    if sl_price == 0 and raw_symbol_lookup in orders_by_raw_symbol:
-                         sl_val = orders_by_raw_symbol[raw_symbol_lookup]['sl']
-                         if sl_val > 0: sl_price = sl_val
+                    base_symbol = symbol.split('/')[0] # e.g. SOL
                     
-                    if tp_price == 0 and raw_symbol_lookup in orders_by_raw_symbol:
-                         tp_val = orders_by_raw_symbol[raw_symbol_lookup]['tp']
-                         if tp_val > 0: tp_price = tp_val
+                    # 1. Try orders_by_symbol (Active Orders)
+                    if raw_symbol_lookup in orders_by_symbol:
+                         if orders_by_symbol[raw_symbol_lookup]['sl'] > 0:
+                             sl_price = orders_by_symbol[raw_symbol_lookup]['sl']
+                         if orders_by_symbol[raw_symbol_lookup]['tp'] > 0:
+                             tp_price = orders_by_symbol[raw_symbol_lookup]['tp']
+                             
+                    # 2. Try orders_by_raw_symbol (Algo Orders)
+                    if sl_price == 0:
+                        if raw_symbol_lookup in orders_by_raw_symbol:
+                             sl_val = orders_by_raw_symbol[raw_symbol_lookup]['sl']
+                             if sl_val > 0: sl_price = sl_val
+                        elif base_symbol + "USDT" in orders_by_raw_symbol: # Try SOLUSDT
+                             sl_val = orders_by_raw_symbol[base_symbol + "USDT"]['sl']
+                             if sl_val > 0: sl_price = sl_val
 
-                    active_positions[symbol] = {
+                    if tp_price == 0:
+                        if raw_symbol_lookup in orders_by_raw_symbol:
+                             tp_val = orders_by_raw_symbol[raw_symbol_lookup]['tp']
+                             if tp_val > 0: tp_price = tp_val
+                        elif base_symbol + "USDT" in orders_by_raw_symbol:
+                             tp_val = orders_by_raw_symbol[base_symbol + "USDT"]['tp']
+                             if tp_val > 0: tp_price = tp_val
+                    
+                    if sl_price == 0 and tp_price == 0:
+                         logger.debug(f"[{symbol}] No SL/TP found. Checked: {symbol}, {raw_symbol_lookup}, {base_symbol+'USDT'}. Orders keys: {list(orders_by_symbol.keys())[:5]}... Algos keys: {list(orders_by_raw_symbol.keys())[:5]}...")
+
+                    # Clean symbol for display
+                    display_symbol = symbol.replace(':USDT', '')
+
+                    active_positions[display_symbol] = {
+                        'symbol': display_symbol,
                         'side': pos['side'], # 'long' or 'short'
                         'amount': amount,
                         'position_value_usdt': position_value_usdt,
@@ -260,7 +410,8 @@ class RealTrader:
                         'roi': roi,
                         'leverage': leverage,
                         'sl_price': sl_price,
-                        'tp_price': tp_price
+                        'tp_price': tp_price,
+                        'entry_time': self.position_entry_times.get(raw_symbol_lookup)
                     }
             return active_positions
         except Exception as e:
@@ -290,7 +441,7 @@ class RealTrader:
     def check_risk_limit(self, new_position_value_usdt: float):
         """
         Check if opening a new position violates risk limits.
-        Limit: Total Leverage <= 30x
+        Limit: Total Leverage <= 10x
         Limit: Daily Loss <= 2% of Capital
         """
         try:
@@ -305,19 +456,23 @@ class RealTrader:
             stats = self.get_stats()
             daily_pnl = stats.get('total_pnl', 0.0)
             
-            # Max Daily Loss Limit (2% of Equity)
-            max_daily_loss = total_equity * 0.02
+            # Max Daily Loss Limit (from config)
+            config = self.config_manager.get_config()
+            max_dd_limit = config.get('max_drawdown_limit', 0.10)
+            
+            max_daily_loss = total_equity * max_dd_limit
             if daily_pnl < -max_daily_loss:
-                logger.warning(f"Risk Check Failed: Daily Loss {daily_pnl:.2f} exceeds limit {-max_daily_loss:.2f}")
+                logger.warning(f"Risk Check Failed: Daily Loss {daily_pnl:.2f} exceeds limit {-max_daily_loss:.2f} ({max_dd_limit*100}%)")
                 return False
                 
             current_total_notional = sum(pos['position_value_usdt'] for pos in positions.values())
             projected_total_notional = current_total_notional + new_position_value_usdt
             
             projected_leverage = projected_total_notional / total_equity
-            
-            if projected_leverage > 30.0:
-                logger.warning(f"Risk Check Failed: Projected Leverage {projected_leverage:.2f}x > 30x Limit")
+            config = self.config_manager.get_config()
+            max_lev = float(config.get('max_portfolio_leverage', 10.0))
+            if projected_leverage > max_lev:
+                logger.warning(f"Risk Check Failed: Projected Leverage {projected_leverage:.2f}x > {max_lev:.0f}x Limit")
                 return False
                 
             return True
@@ -370,8 +525,9 @@ class RealTrader:
                 current_leverage = self.leverage
                 if leverage and leverage != self.leverage:
                     try:
-                        self.exchange.set_leverage(int(leverage), target_symbol)
-                        current_leverage = int(leverage)
+                        lv = min(int(leverage), 10)
+                        self.exchange.set_leverage(lv, target_symbol)
+                        current_leverage = lv
                         # Don't update self.leverage globally if we are supporting multi-symbol with one instance, 
                         # but usually RealTrader is per-symbol. If using dynamic symbol, just log it.
                         logger.info(f"Set dynamic leverage to {current_leverage}x for {target_symbol}")
@@ -379,7 +535,11 @@ class RealTrader:
                         logger.warning(f"Could not set dynamic leverage: {e}")
 
                 # Calculate amount
-                ticker = self.exchange.fetch_ticker(target_symbol)
+                try:
+                    ticker = self._safe_exchange_call('fetch_ticker', target_symbol)
+                except Exception as e:
+                    logger.error(f"Failed to fetch ticker for {target_symbol}: {e}")
+                    return
                 price = ticker['last']
                 
                 if amount_coins and amount_coins > 0:
@@ -402,19 +562,76 @@ class RealTrader:
                 
                 logger.info(f"Opening {side} position for {amount} {target_symbol} at ~{price}")
                 
-                # Place Market Order
-                try:
-                    order = self.exchange.create_order(target_symbol, 'market', side, amount)
-                    logger.info(f"Order placed: {order['id']}")
-                except Exception as e:
-                    if "insufficient" in str(e).lower() or "margin" in str(e).lower():
-                        logger.warning(f"Skipping trade due to insufficient margin: {e}")
-                        return
+                # --- Execution Optimization: TWAP Logic for Large Orders ---
+                # If order value > 5000 USDT, split into 3 parts to reduce slippage
+                twap_threshold = 5000.0
+                executed_amount = 0.0
+                avg_entry_price = 0.0
+                
+                import time
+                
+                if notional_value > twap_threshold:
+                    logger.info(f"🚀 Large Order Detected (${notional_value:.2f}). Executing TWAP (3 splits)...")
+                    chunks = 3
+                    chunk_size = amount / chunks
+                    # Adjust chunk precision
+                    chunk_size = float(self.exchange.amount_to_precision(target_symbol, chunk_size))
+                    
+                    # Recalculate last chunk to match total exactly (avoid precision drift)
+                    last_chunk = amount - (chunk_size * (chunks - 1))
+                    last_chunk = float(self.exchange.amount_to_precision(target_symbol, last_chunk))
+                    
+                    fills = []
+                    
+                    for i in range(chunks):
+                        current_chunk = last_chunk if i == chunks - 1 else chunk_size
+                        if current_chunk <= 0: continue
+                        
+                        try:
+                            logger.info(f"TWAP Part {i+1}/{chunks}: {current_chunk} {target_symbol}")
+                            order = self._safe_exchange_call('create_order', target_symbol, 'market', side, current_chunk)
+                            fills.append(order)
+                            if i < chunks - 1:
+                                time.sleep(2) # 2s delay between chunks
+                        except Exception as e:
+                            logger.error(f"TWAP Part {i+1} failed: {e}")
+                    
+                    # Calculate weighted average entry price
+                    total_cost = 0.0
+                    total_qty = 0.0
+                    for o in fills:
+                        if o.get('average'):
+                            filled = float(o['filled'])
+                            avg_price = float(o['average'])
+                            total_cost += filled * avg_price
+                            total_qty += filled
+                    
+                    if total_qty > 0:
+                        entry_price = total_cost / total_qty
+                        executed_amount = total_qty
+                        # Use the LAST order ID for reference, or a composite ID
+                        order = fills[-1] if fills else {}
+                        order['average'] = entry_price # Mock for later usage
                     else:
-                        raise e
+                        logger.error("TWAP Execution failed completely.")
+                        return
+
+                else:
+                    # Standard Execution
+                    try:
+                        order = self._safe_exchange_call('create_order', target_symbol, 'market', side, amount)
+                        logger.info(f"Order placed: {order['id']}")
+                        executed_amount = float(order['filled']) if order.get('filled') else amount
+                        entry_price = float(order['average']) if order.get('average') else price
+                    except Exception as e:
+                        if "insufficient" in str(e).lower() or "margin" in str(e).lower():
+                            logger.warning(f"Skipping trade due to insufficient margin: {e}")
+                            return
+                        else:
+                            raise e
                 
                 # Place SL/TP
-                entry_price = float(order['average']) if order['average'] else price
+                # entry_price is now set correctly from either TWAP or Standard
                 
                 if sl_price and tp_price:
                     real_sl = sl_price
@@ -434,13 +651,13 @@ class RealTrader:
                 
                 # Stop Loss (Hard SL is good for safety)
                 # Use reduceOnly instead of closePosition to avoid API error -4130 if existing orders conflict
-                self.exchange.create_order(target_symbol, 'STOP_MARKET', sl_side, amount, params={
+                self._safe_exchange_call('create_order', target_symbol, 'STOP_MARKET', sl_side, amount, params={
                     'stopPrice': self.exchange.price_to_precision(target_symbol, real_sl),
                     'reduceOnly': True 
                 })
                 
                 # Take Profit (Hard TP)
-                self.exchange.create_order(target_symbol, 'TAKE_PROFIT_MARKET', sl_side, amount, params={
+                self._safe_exchange_call('create_order', target_symbol, 'TAKE_PROFIT_MARKET', sl_side, amount, params={
                     'stopPrice': self.exchange.price_to_precision(target_symbol, real_tp),
                     'reduceOnly': True
                 })
@@ -469,11 +686,14 @@ class RealTrader:
             amount = float(pos['amount'])
             
             logger.info(f"Closing {pos['side']} position: {side} {amount} {symbol}")
-            order = self.exchange.create_order(symbol, 'market', side, amount)
+            order = self._safe_exchange_call('create_order', symbol, 'market', side, amount)
             logger.info(f"Close order placed: {order['id']}")
             
             # Cancel all open orders (SL/TP)
-            self.exchange.cancel_all_orders(symbol)
+            try:
+                self._safe_exchange_call('cancel_all_orders', symbol)
+            except Exception as e:
+                logger.warning(f"Failed to cancel all orders for {symbol}: {e}")
             logger.info(f"Cancelled all open orders for {symbol}.")
             
             # Notify
@@ -559,7 +779,11 @@ class RealTrader:
             # If profit > trailing_lock_pct (2%), move SL to Entry + 1%
             
             # Check existing SL orders
-            open_orders = self.exchange.fetch_open_orders(target_symbol)
+            open_orders = []
+            try:
+                open_orders = self._safe_exchange_call('fetch_open_orders', target_symbol)
+            except Exception as e:
+                logger.warning(f"Failed to fetch open orders for {target_symbol}: {e}")
             sl_order = next((o for o in open_orders if o['type'] == 'STOP_MARKET'), None)
             
             current_sl_price = float(sl_order['stopPrice']) if sl_order else 0.0
@@ -587,7 +811,7 @@ class RealTrader:
                     self.exchange.cancel_order(sl_order['id'], target_symbol)
                 
                 sl_side = 'sell' if side == 'long' else 'buy'
-                self.exchange.create_order(target_symbol, 'STOP_MARKET', sl_side, amount, params={
+                self._safe_exchange_call('create_order', target_symbol, 'STOP_MARKET', sl_side, amount, params={
                     'stopPrice': self.exchange.price_to_precision(target_symbol, new_sl_price),
                     'reduceOnly': True
                 })
@@ -648,6 +872,11 @@ class RealTrader:
     def start(self):
         self.active = True
         logger.info("Real trading started.")
+        # Auto-repair SL orders on start
+        try:
+            self.repair_orders()
+        except Exception as e:
+            logger.error(f"Failed to auto-repair orders on start: {e}")
 
     def stop(self):
         self.active = False
@@ -656,39 +885,293 @@ class RealTrader:
     def reset(self):
         logger.warning("Reset not supported for Real Trading. Please manage account manually.")
 
-    def get_recent_trades(self, limit: int = 50):
+    def get_recent_trades(self, limit: int = 1000, symbols: list = None):
         if not self.exchange:
             return []
-        try:
-            # Fetch latest 500 trades (Binance default is recent if since is None)
-            # This ensures we get the most recent history for markers and stats
-            trades = self.exchange.fetch_my_trades(self.symbol, limit=500)
             
-            # Format trades for frontend
-            formatted_trades = []
+        # Cache Check
+        import time
+        current_time = time.time()
+        if not symbols and self.trade_history_cache and (current_time - self.last_history_update < 60):
+            return self.trade_history_cache
+
+        try:
+            trades = []
+            target_symbols = symbols if symbols else self.monitored_symbols
+            
+            if target_symbols:
+                # Multi-symbol fetch
+                for sym in target_symbols:
+                    try:
+                        # Limit per coin to avoid fetching too much data
+                        limit_per_coin = 500 if len(target_symbols) > 5 else limit
+                        t = self.exchange.fetch_my_trades(sym, limit=limit_per_coin) 
+                        trades.extend(t)
+                    except Exception as e:
+                        # logger.warning(f"Failed to fetch trades for {sym}: {e}")
+                        pass
+            else:
+                # Fallback
+                trades = self.exchange.fetch_my_trades(self.symbol, limit=limit)
+            
+            # --- Entry Time Matching Logic ---
+            # Sort by timestamp ASC to simulate position history
+            trades.sort(key=lambda x: x['timestamp'])
+            
+            symbol_tracker = {} # { symbol: {'qty': 0.0, 'entry_time': None} }
+            trade_entry_times = {} # { trade_id: entry_timestamp }
+
             for t in trades:
-                # Extract Realized PnL from raw info if available (Binance Futures)
+                sym = t['symbol'].replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                if sym not in symbol_tracker:
+                    symbol_tracker[sym] = {'qty': 0.0, 'entry_time': None}
+                
+                tracker = symbol_tracker[sym]
+                side = t['side']
+                amount = float(t['amount'])
+                qty_change = amount if side == 'buy' else -amount
+                
+                prev_qty = tracker['qty']
+                new_qty = prev_qty + qty_change
+                
+                # Case 1: Open New Position (0 -> Non-Zero)
+                if prev_qty == 0 and new_qty != 0:
+                    tracker['entry_time'] = t['timestamp']
+                # Case 2: Decrease Position (Closing)
+                elif (prev_qty > 0 and new_qty < prev_qty) or (prev_qty < 0 and new_qty > prev_qty):
+                    trade_entry_times[t['id']] = tracker['entry_time']
+                    if new_qty == 0: tracker['entry_time'] = None
+                # Case 3: Flip
+                elif (prev_qty > 0 and new_qty < 0) or (prev_qty < 0 and new_qty > 0):
+                    trade_entry_times[t['id']] = tracker['entry_time']
+                    tracker['entry_time'] = t['timestamp']
+                # Case 4: Increase (Maintain entry time)
+                elif (prev_qty > 0 and new_qty > prev_qty) or (prev_qty < 0 and new_qty < prev_qty):
+                     if tracker['entry_time'] is None: tracker['entry_time'] = t['timestamp']
+                
+                tracker['qty'] = new_qty
+
+            # --- Formatting ---
+            formatted_trades = []
+            
+            for t in trades:
+                # Extract Realized PnL
                 realized_pnl = 0.0
                 if 'info' in t and 'realizedPnl' in t['info']:
                     realized_pnl = float(t['info']['realizedPnl'])
+                elif 'realizedPnl' in t: 
+                    realized_pnl = float(t['realizedPnl'])
                 
-                formatted_trades.append({
+                # Base trade object
+                symbol_display = t.get('symbol', self.symbol).replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                
+                trade_obj = {
                     'id': t['id'],
+                    'symbol': symbol_display, 
                     'timestamp': t['timestamp'],
                     'datetime': t['datetime'],
-                    'side': t['side'],
+                    'side': t['side'], 
                     'price': t['price'],
                     'amount': t['amount'],
                     'cost': t['cost'],
                     'fee': t['fee'],
-                    'realized_pnl': realized_pnl
-                })
+                    'realized_pnl': realized_pnl,
+                    'entry_price': t['price'], 
+                    'exit_price': None,
+                    'roi': 0.0,
+                    'entry_time': None
+                }
+                
+                # If this is a closing trade
+                if abs(realized_pnl) > 0:
+                    exit_price = t['price']
+                    qty = t['amount']
+                    
+                    if qty > 0:
+                        if t['side'] == 'sell':
+                            position_side = 'LONG'
+                            entry_price = exit_price - (realized_pnl / qty)
+                        else:
+                            position_side = 'SHORT'
+                            entry_price = exit_price + (realized_pnl / qty)
+                        
+                        if entry_price > 0:
+                            roi = (realized_pnl / (entry_price * qty)) * 100
+                        else:
+                            roi = 0.0
+                            
+                        trade_obj['entry_price'] = entry_price
+                        trade_obj['exit_price'] = exit_price
+                        trade_obj['position_side'] = position_side
+                        trade_obj['roi'] = roi
+                        
+                        # Populate Entry Time
+                        if t['id'] in trade_entry_times:
+                            trade_obj['entry_time'] = trade_entry_times[t['id']]
+                    else:
+                        logger.warning(f"Trade {t['id']} has realized PnL but qty is 0/None")
+                
+                formatted_trades.append(trade_obj)
+                
             # Sort by time desc
             formatted_trades.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # Update Cache
+            if not symbols:
+                self.trade_history_cache = formatted_trades
+                self.last_history_update = current_time
+            
+            # --- Merge Closed Trades Logic ---
+            # Group by Symbol + Side + Approx Exit Time
+            merged_trades = []
+            if formatted_trades:
+                # Sort by timestamp desc for processing
+                # We need to process from newest to oldest or vice versa?
+                # Actually, if we want to merge "same order", they should be adjacent in time.
+                # formatted_trades is already sorted by timestamp desc (line 910)
+                
+                current_merge = formatted_trades[0]
+                
+                for i in range(1, len(formatted_trades)):
+                    next_trade = formatted_trades[i]
+                    
+                    # Merge conditions:
+                    # 1. Same Symbol
+                    # 2. Same Side
+                    # 3. Both are "closed" trades (have realized_pnl != 0) or both open?
+                    #    Actually, formatted_trades mixes opening and closing. 
+                    #    We only want to merge the closing records that are split (e.g. partial fills or fee records).
+                    #    Usually "Recent Trades (Closed)" implies realized_pnl != 0.
+                    
+                    is_closed_1 = abs(current_merge['realized_pnl']) > 0
+                    is_closed_2 = abs(next_trade['realized_pnl']) > 0
+                    
+                    time_diff = abs(current_merge['timestamp'] - next_trade['timestamp'])
+                    
+                    if (is_closed_1 and is_closed_2 and
+                        current_merge['symbol'] == next_trade['symbol'] and
+                        current_merge['side'] == next_trade['side'] and
+                        time_diff < 300000): # 5 minute tolerance for partial fills
+                        
+                        # Merge logic
+                        total_amt = current_merge['amount'] + next_trade['amount']
+                        
+                        # Weighted prices
+                        if total_amt > 0:
+                            avg_exit = (current_merge['exit_price'] * current_merge['amount'] + next_trade['exit_price'] * next_trade['amount']) / total_amt
+                            avg_entry = (current_merge['entry_price'] * current_merge['amount'] + next_trade['entry_price'] * next_trade['amount']) / total_amt
+                        else:
+                            avg_exit = current_merge['exit_price']
+                            avg_entry = current_merge['entry_price']
+                        
+                        current_merge['amount'] = total_amt
+                        current_merge['exit_price'] = avg_exit
+                        current_merge['entry_price'] = avg_entry
+                        current_merge['price'] = avg_exit
+                        
+                        current_merge['realized_pnl'] += next_trade['realized_pnl']
+                        
+                        fee1 = current_merge.get('fee', 0)
+                        if isinstance(fee1, dict): fee1 = float(fee1.get('cost', 0))
+                        fee2 = next_trade.get('fee', 0)
+                        if isinstance(fee2, dict): fee2 = float(fee2.get('cost', 0))
+                        
+                        current_merge['fee'] = fee1 + fee2
+                        current_merge['cost'] += next_trade['cost']
+                        
+                        # Recalc ROI
+                        if avg_entry * total_amt > 0:
+                            current_merge['roi'] = (current_merge['realized_pnl'] / (avg_entry * total_amt)) * 100
+                        
+                        # Keep earliest entry time
+                        if next_trade.get('entry_time') and (not current_merge.get('entry_time') or next_trade['entry_time'] < current_merge['entry_time']):
+                             current_merge['entry_time'] = next_trade['entry_time']
+                             
+                    else:
+                        merged_trades.append(current_merge)
+                        current_merge = next_trade
+                
+                merged_trades.append(current_merge)
+                formatted_trades = merged_trades
+                
+            # Populate self.position_entry_times for active positions
+            # Logic: If a symbol has a "tracker" with non-zero qty, use that entry time
+            self.position_entry_times = {}
+            for sym, tracker in symbol_tracker.items():
+                if abs(tracker['qty']) > 0 and tracker['entry_time']:
+                    self.position_entry_times[sym] = tracker['entry_time']
+
             return formatted_trades
         except Exception as e:
             logger.error(f"Error fetching trades: {e}")
             return []
+
+    def repair_orders(self, sl_pct: float = 0.03, tp_pct: float = 0.015):
+        """
+        Check all active positions and place SL/TP orders if missing.
+        Default SL: 3% from Entry.
+        Default TP: 1.5% from Entry (High Frequency).
+        """
+        if not self.exchange: return
+        
+        try:
+            positions = self.get_positions()
+            for symbol, pos in positions.items():
+                sl_price = pos.get('sl_price', 0.0)
+                tp_price = pos.get('tp_price', 0.0)
+                
+                entry_price = float(pos['entry_price'])
+                amount = float(pos['amount'])
+                side = pos['side']
+                
+                # Repair SL
+                if sl_price <= 0:
+                    logger.warning(f"[{symbol}] Missing SL! Placing default SL ({sl_pct*100}%)...")
+                    
+                    new_sl = 0.0
+                    sl_side = ''
+                    
+                    if side == 'long':
+                        new_sl = entry_price * (1 - sl_pct)
+                        sl_side = 'sell'
+                    else:
+                        new_sl = entry_price * (1 + sl_pct)
+                        sl_side = 'buy'
+                        
+                    try:
+                        self._safe_exchange_call('create_order', symbol, 'STOP_MARKET', sl_side, amount, params={
+                            'stopPrice': self.exchange.price_to_precision(symbol, new_sl),
+                            'reduceOnly': True
+                        })
+                        logger.info(f"[{symbol}] Repaired SL at {new_sl}")
+                    except Exception as e:
+                        logger.error(f"[{symbol}] Failed to repair SL: {e}")
+                
+                # Repair TP
+                if tp_price <= 0:
+                    logger.warning(f"[{symbol}] Missing TP! Placing default TP ({tp_pct*100}%)...")
+                    
+                    new_tp = 0.0
+                    tp_side = ''
+                    
+                    if side == 'long':
+                        new_tp = entry_price * (1 + tp_pct)
+                        tp_side = 'sell'
+                    else:
+                        new_tp = entry_price * (1 - tp_pct)
+                        tp_side = 'buy'
+                        
+                    try:
+                        self._safe_exchange_call('create_order', symbol, 'TAKE_PROFIT_MARKET', tp_side, amount, params={
+                            'stopPrice': self.exchange.price_to_precision(symbol, new_tp),
+                            'reduceOnly': True
+                        })
+                        logger.info(f"[{symbol}] Repaired TP at {new_tp}")
+                    except Exception as e:
+                        logger.error(f"[{symbol}] Failed to repair TP: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in repair_orders: {e}")
 
     def set_amount(self, amount_usdt: float):
         self.amount_usdt = amount_usdt
@@ -704,10 +1187,11 @@ class RealTrader:
                 "start_time": self.start_time.isoformat()
             }
             
-        trades = self.get_recent_trades(limit=100)
-        # Use 24h window for stats instead of process start time to persist stats across restarts
-        since_ts = int((datetime.now().timestamp() - 86400) * 1000)
-        trades = [t for t in trades if t['timestamp'] >= since_ts]
+        # User requested ALL history, so we increase limit and remove time filter
+        trades = self.get_recent_trades(limit=1000)
+        # Previously filtered by 24h, now using all fetched trades
+        # since_ts = int((datetime.now().timestamp() - 86400) * 1000)
+        # trades = [t for t in trades if t['timestamp'] >= since_ts]
         
         # Calculate Total PnL (Realized PnL - Commission)
         # Binance realizedPnl usually includes commission for the trade pnl, but 'fee' field is separate.
@@ -724,7 +1208,10 @@ class RealTrader:
             pnl = t.get('realized_pnl', 0.0)
             fee = 0.0
             if t.get('fee'):
-                 fee = float(t['fee']['cost']) if t['fee'].get('cost') else 0.0
+                if isinstance(t['fee'], dict):
+                    fee = float(t['fee'].get('cost', 0.0))
+                elif isinstance(t['fee'], (int, float)):
+                    fee = float(t['fee'])
             
             # If it's a closing trade (realized_pnl != 0), we sum it.
             # But fees apply to both opening and closing trades.
@@ -743,7 +1230,10 @@ class RealTrader:
              pnl = t.get('realized_pnl', 0.0)
              fee = 0.0
              if t.get('fee'):
-                 fee = float(t['fee']['cost']) if t['fee'].get('cost') else 0.0
+                if isinstance(t['fee'], dict):
+                    fee = float(t['fee'].get('cost', 0.0))
+                elif isinstance(t['fee'], (int, float)):
+                    fee = float(t['fee'])
              
              if (pnl - fee) > 0:
                  winning_trades.append(t)
@@ -767,36 +1257,75 @@ class RealTrader:
         """
         Return status dict compatible with PaperTrader
         """
-        balance = self.get_balance() # This is free balance
-        
-        # Get Equity (totalMarginBalance)
-        equity = self.get_total_balance()
-        
-        # Use get_positions to return ALL active positions
-        positions_dict = self.get_positions()
-        
-        unrealized_pnl = 0.0
-        # Sum unrealized pnl from all positions
-        for pos in positions_dict.values():
-            unrealized_pnl += pos['unrealized_pnl']
-        
-        # Calculate Wallet Balance (Equity - Unrealized PnL)
-        # Note: If get_total_balance returns totalMarginBalance, it includes unrealized PnL.
-        wallet_balance = equity - unrealized_pnl
-        
-        # Get Stats
-        stats = self.get_stats()
-            
-        return {
-            "active": self.active,
-            "balance": balance,
-            "total_balance": wallet_balance, # Wallet Balance (for display consistency)
-            "equity": equity, # Real Equity
-            "positions": positions_dict,
-            "trade_history": self.get_recent_trades(limit=500),
-            "stats": stats,
-            "initial_balance": self.initial_balance if self.initial_balance else wallet_balance,
-            "connection_status": self.last_connection_status,
-            "connection_error": self.last_connection_error
-        }
+        # Check cache
+        now = time.time()
+        if self.cached_status and (now - self.last_status_update < self.status_cache_ttl):
+            return self.cached_status
 
+        try:
+            # Call get_recent_trades FIRST to populate position_entry_times for active positions
+            trade_history = self.get_recent_trades(limit=1000)
+            
+            balance = self.get_balance() # This is free balance
+            
+            # Get Equity (totalMarginBalance)
+            equity = self.get_total_balance()
+            
+            # Use get_positions to return ALL active positions
+            positions_dict = self.get_positions()
+            
+            unrealized_pnl = 0.0
+            # Sum unrealized pnl from all positions
+            for pos in positions_dict.values():
+                unrealized_pnl += pos['unrealized_pnl']
+            
+            # Calculate Wallet Balance (Equity - Unrealized PnL)
+            # Note: If get_total_balance returns totalMarginBalance, it includes unrealized PnL.
+            wallet_balance = equity - unrealized_pnl
+            
+            # Get Stats
+            stats = self.get_stats()
+                
+            status = {
+                "active": self.active,
+                "balance": balance,
+                "total_balance": wallet_balance, # Wallet Balance (for display consistency)
+                "equity": equity, # Real Equity
+                "unrealized_pnl": unrealized_pnl, # Added Unrealized PnL
+                "positions": positions_dict,
+                "trade_history": trade_history,
+                "stats": stats,
+                "initial_balance": self.initial_balance if self.initial_balance else wallet_balance,
+                "open_orders_count": self.open_orders_count, # Added open orders count
+                "connection_status": self.last_connection_status,
+                "connection_error": self.last_connection_error
+            }
+
+            # Update cache
+            self.cached_status = status
+            self.last_status_update = now
+            return status
+
+        except Exception as e:
+            logger.error(f"Error in get_status: {e}")
+            if self.cached_status:
+                logger.info("Returning stale cached status due to error")
+                stale_status = self.cached_status.copy()
+                stale_status['connection_status'] = "Warning" # Indicate stale data
+                stale_status['connection_error'] = str(e)
+                return stale_status
+            
+            # If no cache, return error state
+            return {
+                "active": self.active,
+                "balance": 0.0,
+                "total_balance": 0.0,
+                "equity": 0.0,
+                "unrealized_pnl": 0.0,
+                "positions": {},
+                "trade_history": [],
+                "stats": {"win_rate": 0.0, "total_trades": 0, "total_pnl": 0.0},
+                "initial_balance": 0.0,
+                "connection_status": "Error",
+                "connection_error": str(e)
+            }

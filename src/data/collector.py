@@ -33,7 +33,8 @@ class CryptoDataCollector:
         self._price_ttl = 2  # Cache price for 2 seconds
         
         self._ohlcv_cache = {} # Key: (timeframe, limit, since)
-        self._ohlcv_ttl = 5    # Cache OHLCV for 5 seconds
+        self._ohlcv_ttl = 5    # Default TTL for non-1m frames
+        self._ohlcv_1m_ttl = 60  # Cache 1m OHLCV for 60 seconds
         
         logger.info(f"Initialized Binance Vision Collector for {self.symbol} with proxies: {proxies}")
 
@@ -70,6 +71,8 @@ class CryptoDataCollector:
                     'high': float(ticker['highPrice']),
                     'low': float(ticker['lowPrice']),
                     'volume': float(ticker['quoteVolume']),
+                    'price_change': float(ticker.get('priceChange', 0.0)),
+                    'price_change_percent': float(ticker.get('priceChangePercent', 0.0)),
                     'source': 'api'
                 }
                 
@@ -98,8 +101,10 @@ class CryptoDataCollector:
             'last': price,
             'high': price + 500,
             'low': price - 500,
-            'volume': 50000 + np.random.random() * 10000,
-            'source': 'simulated'
+            'volume': 1000000.0,
+            'price_change': random_move,
+            'price_change_percent': (random_move / base_price) * 100,
+            'source': 'dummy'
         }
 
     def fetch_ohlcv(self, timeframe='1h', limit=100, since=None):
@@ -154,7 +159,8 @@ class CryptoDataCollector:
         cache_key = (timeframe, limit, since)
         if cache_key in self._ohlcv_cache:
             ts, data = self._ohlcv_cache[cache_key]
-            if time.time() - ts < self._ohlcv_ttl:
+            ttl = self._ohlcv_1m_ttl if timeframe == '1m' else self._ohlcv_ttl
+            if time.time() - ts < ttl:
                 return data.copy()
 
         try:
@@ -382,6 +388,20 @@ class FuturesDataCollector(CryptoDataCollector):
         self._futures_ttl = 60 # 1 minute cache
         
         logger.info(f"Initialized Binance Futures Collector for {self.symbol}")
+
+    def fetch_all_tickers(self):
+        """Fetch 24h ticker data for ALL symbols (Cost: 40)"""
+        try:
+            url = f"{self.base_url}/ticker/24hr"
+            resp = self.session.get(url, timeout=10)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                logger.warning(f"Error fetching all tickers: {resp.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"Exception fetching all tickers: {e}")
+            return []
 
     def fetch_funding_rate_history(self, start_time=None, end_time=None, limit=1000):
         """Fetch funding rate history"""

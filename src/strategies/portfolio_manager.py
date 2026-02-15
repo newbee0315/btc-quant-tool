@@ -4,6 +4,7 @@ import logging
 import joblib
 import pandas as pd
 import numpy as np
+import ccxt
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -14,6 +15,8 @@ from src.data.collector import CryptoDataCollector
 from src.models.features import FeatureEngineer
 from src.models.predictor import PricePredictor
 from src.strategies.trend_ml_strategy import TrendMLStrategy
+from src.utils.config_manager import config_manager
+from src.risk.correlation_manager import CorrelationManager
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,15 @@ class PortfolioManager:
         self.strategies = {}
         self.max_workers = max_workers
         self.proxy_url = proxy_url
+        self.config_manager = config_manager
+        
+        # Risk Managers
+        self.correlation_manager = CorrelationManager(lookback_period=100)
+        
+        # Leaderboard scan cache / rate-limit
+        self._last_lb_scan_ts = 0
+        self._cached_lb_candidates = []
+        self._lb_scan_min_interval = 300  # seconds
         
         # Initialize collectors and predictors
         self._initialize_infrastructure()
@@ -57,6 +69,12 @@ class PortfolioManager:
         if self.proxy_url:
             proxies = {"http": self.proxy_url, "https": self.proxy_url}
         
+        # Load Config
+        config = self.config_manager.get_config()
+        ml_threshold = config.get('ml_threshold', 0.65)
+        rsi_period = config.get('rsi_period', 14)
+        ema_period = config.get('ema_period', 200)
+        
         for symbol in self.active_symbols:
             # 1. Setup Data Collector
             self.collectors[symbol] = CryptoDataCollector(symbol=symbol, proxies=proxies)
@@ -64,8 +82,31 @@ class PortfolioManager:
             # 2. Setup Price Predictor (handles model loading)
             self.predictors[symbol] = PricePredictor(symbol=symbol)
 
-            # 3. Setup Strategy
-            self.strategies[symbol] = TrendMLStrategy()
+            # 3. Setup Strategy with Config
+            self.strategies[symbol] = TrendMLStrategy(
+                ema_period=ema_period,
+                rsi_period=rsi_period,
+                ml_threshold=ml_threshold
+            )
+
+    def reload_config(self):
+        """Reload strategy configuration and update all active strategies."""
+        try:
+            config = self.config_manager.get_config()
+            ml_threshold = config.get('ml_threshold', 0.65)
+            rsi_period = config.get('rsi_period', 14)
+            ema_period = config.get('ema_period', 200)
+            
+            logger.info(f"Reloading Config: ML={ml_threshold}, RSI={rsi_period}, EMA={ema_period}")
+            
+            for symbol, strategy in self.strategies.items():
+                strategy.ml_threshold = ml_threshold
+                strategy.rsi_period = rsi_period
+                strategy.ema_period = ema_period
+                
+        except Exception as e:
+            logger.error(f"Failed to reload config: {e}")
+
 
     def scan_leaderboard(self, limit=3):
         """
@@ -73,16 +114,39 @@ class PortfolioManager:
         Returns list of symbols that are NOT in active_symbols.
         """
         try:
-            # Use the first available collector's exchange
-            if not self.collectors:
-                return []
+            import time
+            now = time.time()
+            if (now - getattr(self, '_last_lb_scan_ts', 0)) < getattr(self, '_lb_scan_min_interval', 300):
+                if self._cached_lb_candidates:
+                    return self._cached_lb_candidates[:limit]
+                # Fall through if no cache yet
             
-            # Grab any exchange instance
-            first_symbol = list(self.collectors.keys())[0]
-            exchange = self.collectors[first_symbol].exchange
+            # Create a dedicated exchange instance for scanning if not available
+            if not hasattr(self, 'scanner_exchange') or self.scanner_exchange is None:
+                options = {'enableRateLimit': True}
+                if self.proxy_url:
+                    options['proxies'] = {'http': self.proxy_url, 'https': self.proxy_url}
+                self.scanner_exchange = ccxt.binanceusdm(options)
+            
+            exchange = self.scanner_exchange
             
             # Fetch all tickers
-            tickers = exchange.fetch_tickers()
+            # Add simple retry with backoff to avoid transient 429
+            attempts = 0
+            while True:
+                try:
+                    tickers = exchange.fetch_tickers()
+                    break
+                except Exception as e:
+                    attempts += 1
+                    msg = str(e).lower()
+                    if attempts <= 3 and ('rate limit' in msg or 'too many' in msg or '429' in msg or '-1003' in msg):
+                        sleep_s = min(2 ** attempts, 30)
+                        logger.warning(f"Leaderboard fetch_tickers rate-limited. Retry {attempts} in {sleep_s}s...")
+                        time.sleep(sleep_s)
+                        continue
+                    else:
+                        raise
             
             # Filter for USDT Futures
             candidates = []
@@ -111,7 +175,11 @@ class PortfolioManager:
             # Sort by absolute change (Volatility)
             candidates.sort(key=lambda x: abs(x['change'] if x['change'] else 0), reverse=True)
             
-            return candidates[:limit]
+            result = candidates[:limit]
+            # Update cache and timestamp
+            self._cached_lb_candidates = result
+            self._last_lb_scan_ts = now
+            return result
             
         except Exception as e:
             logger.error(f"Leaderboard scan failed: {e}")
@@ -220,6 +288,11 @@ class PortfolioManager:
             
             # Get current price
             current_price = df.iloc[-1]['close']
+            
+            # Update Correlation Manager with latest price history
+            # Use timestamp as index for proper alignment across symbols
+            prices_series = df.set_index('timestamp')['close']
+            self.correlation_manager.update_price_history(symbol, prices_series)
                 
             # Generate predictions (ML)
             preds = predictor.predict_all(df)
@@ -281,10 +354,10 @@ class PortfolioManager:
             logger.error(f"[{symbol}] Analysis failed: {e}")
             return None
 
-    def scan_market(self):
+    def scan_market(self, return_all=False):
         """
         Scan all active symbols concurrently.
-        Returns sorted list of opportunities.
+        Returns sorted list of opportunities (or all results if return_all=True).
         """
         results = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -292,9 +365,18 @@ class PortfolioManager:
             
             for future in futures:
                 res = future.result()
-                if res and res.get("signal") in ["LONG", "SHORT"]:
-                    results.append(res)
+                if res:
+                    if return_all:
+                        results.append(res)
+                    elif res.get("signal") in ["LONG", "SHORT"]:
+                        results.append(res)
         
+        # Update Correlation Matrix after gathering fresh data
+        try:
+            self.correlation_manager.calculate_correlation_matrix()
+        except Exception as e:
+            logger.error(f"Failed to update correlation matrix: {e}")
+
         # Sort by 'strength' (deviation from 0.5)
         # 0.9 -> 0.4 diff, 0.1 -> 0.4 diff
         results.sort(key=lambda x: abs(x["avg_probability"] - 0.5), reverse=True)

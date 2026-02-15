@@ -200,12 +200,16 @@ export default function SettingsPage() {
                                     <input 
                                         type="number" 
                                         min="1"
-                                        max="125"
+                                        max="10"
                                         value={strategyConfig.leverage}
-                                        onChange={(e) => setStrategyConfig({...strategyConfig, leverage: parseInt(e.target.value)})}
+                                        onChange={(e) => {
+                                            const v = parseInt(e.target.value || '1', 10);
+                                            const clamped = Math.max(1, Math.min(10, isNaN(v) ? 1 : v));
+                                            setStrategyConfig({...strategyConfig, leverage: clamped});
+                                        }}
                                         className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                     />
-                                    <p className="text-[10px] text-[#848E9C] mt-1">合约杠杆倍数 (1x - 125x)</p>
+                                    <p className="text-[10px] text-[#848E9C] mt-1">合约杠杆倍数 (1x - 10x)</p>
                                 </div>
                             </div>
                         </div>

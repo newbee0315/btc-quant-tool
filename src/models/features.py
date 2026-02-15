@@ -98,6 +98,35 @@ class FeatureEngineer:
         low_close = np.abs(df['low'] - df['close'].shift())
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = ranges.max(axis=1)
+        
+        df['atr_14'] = true_range.rolling(window=14).mean()
+        
+        # --- 7. Market Microstructure Features (Proxies) ---
+        
+        # A. Amihud Illiquidity Proxy (Abs Return / Dollar Volume)
+        # Higher value = Less Liquid (Price moves more per dollar traded)
+        # Avoid division by zero
+        dollar_volume = df['volume'] * df['close']
+        df['amihud_illiquidity'] = df['pct_change'].abs() / (dollar_volume + 1e-9)
+        # Smooth it
+        df['amihud_illiquidity_24h'] = df['amihud_illiquidity'].rolling(window=24).mean()
+        
+        # B. Parkinson Volatility (High-Low based)
+        # More efficient estimator than Close-to-Close
+        # Formula: sqrt(1 / (4 * ln(2)) * (ln(High/Low))^2)
+        # ln(High/Low) = ln(High) - ln(Low)
+        hl_ratio_log = np.log(df['high'] / df['low'])
+        df['volatility_parkinson'] = np.sqrt((1.0 / (4.0 * np.log(2.0))) * (hl_ratio_log ** 2))
+        df['volatility_parkinson_24h'] = df['volatility_parkinson'].rolling(window=24).mean()
+        
+        # C. Effective Spread Proxy (High - Low) / Close
+        # A simple measure of intraday bid-ask spread + volatility
+        df['effective_spread'] = (df['high'] - df['low']) / df['close']
+        
+        # D. Volume Volatility (Stability of Liquidity)
+        df['volume_volatility'] = df['volume'].rolling(window=24).std() / (df['volume'].rolling(window=24).mean() + 1e-9)
+        
+        # --- 8. Existing Feature Cleanup ---
         df['atr_14'] = true_range.rolling(14).mean()
         df['atr_rel'] = df['atr_14'] / df['close']
         

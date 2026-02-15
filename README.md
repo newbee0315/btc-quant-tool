@@ -63,6 +63,8 @@
     export BINANCE_API_SECRET="your_secret"
     ```
 
+> 安全提示：仓库已在 `.gitignore` 中忽略了 `.env` 与 `trader_config.json`。如曾误提交敏感文件，请执行 `git rm --cached <文件>` 后再提交。
+
 ### 使用 Docker 启动 (Recommended)
 
 只需一条命令即可启动整个堆栈（前端 + 后端）：
@@ -98,6 +100,16 @@ npm install
 npm run dev
 ```
 
+### 交易机器人 (Multi-Coin Bot)
+
+```bash
+python scripts/run_multicoin_bot.py
+```
+
+*   单实例防重：内置锁文件 `/tmp/btc_quant_multicoin.lock`，避免重复进程引发下单冲突与 API 限流。
+*   启动策略：顺序初始化各币种 Trader（每币 1s），降低 429/418 风险。
+*   风控核心：支持全局风险上限（max_portfolio_leverage，1~10x），相关性过滤（默认阈值 0.65），单币/同向敞口上限等。
+
 ## 📂 目录结构 (Directory Structure)
 
 ```
@@ -124,6 +136,28 @@ npm run dev
 详细部署指南请参考 [docs/DEPLOYMENT_NOTES.md](docs/DEPLOYMENT_NOTES.md)。
 
 本项目支持一键部署到云服务器（如阿里云），包含自动化打包脚本和环境配置说明。
+
+## 🔐 安全与合规 (Security)
+
+- 切勿将以下文件提交到 Git：
+  - `.env`、`.env.*`
+  - `trader_config.json`（包含 `api_key`、`api_secret`）
+- 校验是否被跟踪：
+  ```bash
+  git ls-files --error-unmatch .env || echo \"NOT TRACKED\"
+  git ls-files --error-unmatch trader_config.json || echo \"NOT TRACKED\"
+  ```
+- 若误加入 Git 历史：
+  ```bash
+  git rm --cached .env trader_config.json
+  echo -e \"\\n.env\\ntrader_config.json\" >> .gitignore
+  git commit -m \"chore: remove secrets from repo\"
+  ```
+
+## ⛑ 稳定性 (Resilience)
+
+- 时间同步自愈：检测到 `-1021 Timestamp ahead` 时，主动调用交易所时间 `fetch_time()` 计算 `timeDifference` 并重试，避免签名失败。
+- Watchdog：后端定时任务每 30 分钟巡检核心作业与机器人心跳；机器人日志 60 分钟内有更新视为健康。
 
 ## 📝 许可证 (License)
 
