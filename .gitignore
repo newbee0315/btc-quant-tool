@@ -17,6 +17,11 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
+*.log.*
+*.pdf
+*.csv
+!src/data/README.md
+
 .pytest_cache/
 
 # Node.js

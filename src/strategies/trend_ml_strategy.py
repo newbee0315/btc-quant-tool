@@ -484,37 +484,32 @@ class TrendMLStrategy(BaseStrategy):
         # 4. Multi-Mode Risk Management (Risk-Based Position Sizing)
         sl_price = 0.0
         tp_price = 0.0
-        suggested_leverage = 1.0
+        # Dynamic Leverage Calculation
+        suggested_leverage = 10.0
+        if market_mode == 'high' or ml_prob > 0.8:
+             suggested_leverage = 20.0
+             
         position_size = 0.0
         
         if signal != 0 and atr > 0:
             total_capital = extra_data.get('total_capital', 10.0) if extra_data else 10.0
             
             # Risk Parameters
-            risk_per_trade_pct = 0.02 # Max 2% loss of total capital per trade
-            
-            # Risk Management: Dynamic Risk based on Volatility (ATR %)
-            atr_pct = atr / close_price
-            if atr_pct > 0.02: # High volatility > 2% ATR
-                risk_per_trade_pct = 0.015
-            if atr_pct > 0.04: # Extreme volatility
-                risk_per_trade_pct = 0.01
-            
-            # Reduce risk for Reversal trades (Counter-trend)
-            if any("缠论" in r for r in reason):
-                risk_per_trade_pct = min(risk_per_trade_pct, 0.015)
+            # Optimized: Increase base risk for compounding (15% position size logic handled in bot)
+            # Here we just suggest technical SL/TP prices
             
             # Calculate SL Distance based on Mode
-            sl_mult = 3.0
-            tp_mult = 4.0
-            min_sl_pct = 0.018 # 1.8% minimum (User Rule: Loss >= 1.8% then stop)
+            # Optimized: Tighter SL (1.5% - 2%) -> Adjusted to Min 2% per documentation to avoid noise
+            sl_mult = 2.0 # Standard SL multiplier (was 3.0)
+            tp_mult = 4.0 # TP multiplier (Aim for 2:1 ratio)
+            min_sl_pct = 0.02 # 2.0% minimum (Matches documentation)
             
             if market_mode == 'low':
-                sl_mult = 6.0 # Extremely wide SL to avoid noise
-                tp_mult = 1.0 # Not used for TP dist (fixed), but good for reference
+                sl_mult = 4.0 # Wider SL for low vol noise
+                tp_mult = 1.5 # Quick scalp
             elif market_mode == 'high':
-                sl_mult = 3.0 # Widen SL for volatility
-                tp_mult = 6.0 # Breakout: hold position, wide TP
+                sl_mult = 2.5 
+                tp_mult = 5.0 # Let profits run
                 
             # Adaptive SL for High Confidence
             if ml_prob > 0.8:
@@ -523,37 +518,19 @@ class TrendMLStrategy(BaseStrategy):
             sl_dist = atr * sl_mult
             
             # Enforce Min/Max SL distance
+            # Cap max SL at 2% to ensure R:R
             if (sl_dist / close_price) < min_sl_pct:
                 sl_dist = close_price * min_sl_pct
+            elif (sl_dist / close_price) > 0.03: # Max 3% SL
+                sl_dist = close_price * 0.03
             
-            # Calculate Position Size based on Risk
-            # Risk Amount = Total Capital * Risk %
-            # Position Value * (SL Distance / Price) = Risk Amount
-            # Position Value = Risk Amount / (SL Distance / Price)
-            risk_amount = total_capital * risk_per_trade_pct
-            sl_pct = sl_dist / close_price
+            # TP Distance
+            # Aim for 1:2 R:R (TP = 2 * SL)
+            tp_dist = sl_dist * 2.0 
             
-            target_position_value = risk_amount / sl_pct
-            
-            # Cap Position Value by Max Leverage
-            max_leverage = 10.0
-            # if market_mode == 'low': max_leverage = 10.0 # Optional: tighter for low vol?
-            # if market_mode == 'high': max_leverage = 15.0 
-            
-            max_position_value = total_capital * max_leverage
-            position_value = min(target_position_value, max_position_value)
-            
-            # Calculate suggested leverage for this position
-            suggested_leverage = max_leverage 
-            
-            # Final Position Size
-            position_size = position_value / close_price
-            
-            tp_dist = sl_dist * (tp_mult / sl_mult) # Maintain R:R ratio
-            
-            # Special case for Scalp Mode: Fixed TP % (0.5%)
-            if market_mode == 'low':
-                tp_dist = close_price * 0.005 # Fixed 0.5% TP for high win rate scalping
+            # Special case for Scalp Mode: Fixed TP % (1.0%)
+            if market_mode == 'low' or '[Scalp]' in str(reason):
+                tp_dist = close_price * 0.01 
 
             if signal == 1:
                 sl_price = close_price - sl_dist
@@ -563,8 +540,7 @@ class TrendMLStrategy(BaseStrategy):
                 tp_price = close_price - tp_dist
                 
             reason.append(f"模式:{market_mode}")
-            reason.append(f"风险:{risk_per_trade_pct*100}%")
-            reason.append(f"杠杆:{suggested_leverage}x")
+            reason.append(f"杠杆:{int(suggested_leverage)}x")
 
         # Log execution
         self.log_execution(
@@ -596,7 +572,7 @@ class TrendMLStrategy(BaseStrategy):
             "trade_params": {
                 "sl_price": sl_price,
                 "tp_price": tp_price,
-                "leverage": suggested_leverage,
+                "leverage": int(suggested_leverage),
                 "position_size": position_size
             }
         }

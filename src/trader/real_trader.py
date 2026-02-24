@@ -24,6 +24,16 @@ class RealTrader:
         self.equity_recorder = EquityRecorder()
         self.config_manager = config_manager
         
+        # Fallback: Load proxy from config if not provided
+        if not self.proxy_url:
+            try:
+                cfg = self.config_manager.get_config()
+                if cfg.get('proxy_url'):
+                    self.proxy_url = cfg.get('proxy_url')
+                    logger.info(f"Loaded proxy_url from config: {self.proxy_url}")
+            except Exception as e:
+                logger.warning(f"Failed to load proxy from config: {e}")
+        
         # Cache for get_status
         self.cached_status = None
         self.last_status_update = 0
@@ -120,6 +130,13 @@ class RealTrader:
         self.position_highs = {} # Track highest price for dynamic exit
         self.position_entry_times = {} # Track entry time for active positions from history analysis
         self.open_orders_count = 0 # Track open orders count
+        self.last_equity = 0.0
+        
+        # Cache for open orders to avoid rate limits
+        self.cached_open_orders = []
+        self.last_open_orders_fetch = 0
+        self.open_orders_cache_ttl = 30 # 30 seconds cache for open orders
+        
         # Backoff configuration
         self._max_retry = 5
         self._base_backoff = 1.0
@@ -207,18 +224,19 @@ class RealTrader:
                 self.last_connection_status = "Disconnected"
             return 0.0
         try:
-            balance = self.exchange.fetch_balance()
+            balance = self._safe_exchange_call('fetch_balance')
             
             # Use totalMarginBalance if available (Wallet + Unrealized PnL)
             # This is the "Equity" that users typically care about
             if 'info' in balance and 'totalMarginBalance' in balance['info']:
                 total_balance = float(balance['info']['totalMarginBalance'])
             else:
-                # Fallback: Wallet Balance + Unrealized PnL
                 total_balance = balance['USDT']['total']
             
             if self.initial_balance is None:
                 self.initial_balance = total_balance
+            if total_balance > 0:
+                self.last_equity = total_balance
             
             self.last_connection_status = "Connected"
             self.last_connection_error = None
@@ -233,89 +251,129 @@ class RealTrader:
         if not self.exchange:
             return 0.0
         try:
-            balance = self.exchange.fetch_balance()
+            balance = self._safe_exchange_call('fetch_balance')
             # Prefer totalMarginBalance (Equity)
             if 'info' in balance and 'totalMarginBalance' in balance['info']:
-                return float(balance['info']['totalMarginBalance'])
-            return balance['USDT']['total']
+                equity = float(balance['info']['totalMarginBalance'])
+            else:
+                equity = float(balance['USDT']['total'])
+            if equity > 0:
+                self.last_equity = equity
+            return equity
         except Exception as e:
             logger.error(f"Error fetching total balance: {e}")
+            if self.last_equity > 0:
+                return self.last_equity
+            if self.initial_balance:
+                try:
+                    return float(self.initial_balance)
+                except Exception:
+                    return 0.0
             return 0.0
 
-    def get_positions(self):
-        """Fetch all active positions from the account"""
+    def get_positions(self, symbol: str = None):
+        """Fetch all active positions from the account, or only for a specific symbol"""
         if not self.exchange:
             return {}
         
         try:
-            # 1. Fetch all positions first
+            # 1. Fetch positions
             positions = self._safe_exchange_call('fetch_positions')
-            logger.info(f"DEBUG: fetch_positions() returned {len(positions)} positions")
-            
+
+            # Filter if symbol provided
+            if symbol:
+                positions = [p for p in positions if p['symbol'] == symbol]
+
             # 2. Identify active symbols to fetch orders for
             active_symbols = []
+            active_count = 0
             for pos in positions:
-                if float(pos['contracts']) > 0:
+                amt = 0.0
+                try:
+                    amt = float(pos.get('contracts', 0) or 0)
+                except Exception:
+                    amt = 0.0
+                if amt == 0:
+                    info = pos.get('info', {})
+                    try:
+                        amt = float(info.get('positionAmt', 0) or 0)
+                    except Exception:
+                        amt = 0.0
+                if abs(amt) > 0:
                     active_symbols.append(pos['symbol'])
+                    active_count += 1
+            
+            if active_count > 0:
+                 logger.info(f"DEBUG: fetch_positions found {active_count} active positions: {active_symbols}")
+
+            if symbol and symbol not in active_symbols:
+                active_symbols.append(symbol)
 
             # 3. Fetch Open Orders
-            # Try to fetch ALL open orders first to save API calls
             open_orders = []
-            try:
-                open_orders = self._safe_exchange_call('fetch_open_orders')
-            except Exception as e:
-                for sym in active_symbols:
-                    try:
-                        orders = self._safe_exchange_call('fetch_open_orders', sym)
-                        open_orders.extend(orders)
-                    except Exception as e2:
-                        logger.warning(f"Failed to fetch open orders for {sym}: {e2}")
+            import time
+            now = time.time()
+            
+            if symbol:
+                try:
+                    open_orders = self._safe_exchange_call('fetch_open_orders', symbol)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch open orders for {symbol}: {e}")
+            else:
+                if self.cached_open_orders and (now - self.last_open_orders_fetch < self.open_orders_cache_ttl):
+                    open_orders = self.cached_open_orders
+                else:
+                    open_orders = []
+                    unique_symbols = list(set(active_symbols))
+                    for sym in unique_symbols:
+                        try:
+                            orders = self._safe_exchange_call('fetch_open_orders', sym)
+                            open_orders.extend(orders)
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch open orders for {sym}: {e}")
+                    self.cached_open_orders = open_orders
+                    self.last_open_orders_fetch = now
                 
-            # 4. Fetch Algo Orders (SL/TP often reside here for some strategies)
+            # 4. Fetch Algo Orders
             algo_orders = []
             try:
-                raw_algos = self._safe_exchange_call('fapiPrivateGetOpenAlgoOrders')
+                params = {}
+                if symbol:
+                    params['symbol'] = symbol.replace('/', '').replace(':USDT', '')
+                raw_algos = self._safe_exchange_call('fapiPrivateGetOpenAlgoOrders', params)
                 algo_orders = raw_algos
             except Exception as e:
                 logger.warning(f"Could not fetch algo orders: {e}")
 
-            # Update open orders count
             self.open_orders_count = len(open_orders) + len(algo_orders)
 
-            # Map open orders to symbols
             orders_by_symbol = {}
-            
-            # Helper for raw symbol matching
             orders_by_raw_symbol = {} 
 
             for order in open_orders:
                 sym = order['symbol']
-                # Normalize symbol for key
                 norm_sym = sym.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                
                 if norm_sym not in orders_by_symbol:
                     orders_by_symbol[norm_sym] = {'sl': 0.0, 'tp': 0.0}
                 
                 order_type = order.get('type')
-                stop_price = float(order.get('stopPrice', 0.0))
+                stop_price = float(order.get('stopPrice') or 0.0)
                 
                 if stop_price > 0:
-                     if 'STOP' in order_type: # STOP, STOP_MARKET
+                     if 'STOP' in order_type:
                          orders_by_symbol[norm_sym]['sl'] = stop_price
-                     elif 'TAKE_PROFIT' in order_type: # TAKE_PROFIT, TAKE_PROFIT_MARKET
+                     elif 'TAKE_PROFIT' in order_type:
                          orders_by_symbol[norm_sym]['tp'] = stop_price
 
-            # Process Algo Orders
             for algo in algo_orders:
-                raw_sym = algo['symbol'] # e.g. SOLUSDT
+                raw_sym = algo['symbol']
                 if raw_sym not in orders_by_raw_symbol:
                     orders_by_raw_symbol[raw_sym] = {'sl': 0.0, 'tp': 0.0}
                 
                 o_type = algo.get('orderType', '')
-                # triggerPrice is usually where the stop price is for algo orders
-                stop_price = float(algo.get('triggerPrice', 0.0))
+                stop_price = float(algo.get('triggerPrice') or 0.0)
                 if stop_price == 0:
-                    stop_price = float(algo.get('stopPrice', 0.0))
+                    stop_price = float(algo.get('stopPrice') or 0.0)
                 
                 if stop_price > 0:
                     if 'STOP' in o_type:
@@ -325,94 +383,91 @@ class RealTrader:
 
             active_positions = {}
             for pos in positions:
-                if float(pos['contracts']) > 0:
-                    symbol = pos['symbol']
-                    
-                    # Calculate ROI if not provided
-                    unrealized_pnl = float(pos['unrealizedPnl'])
-                    initial_margin = float(pos['initialMargin']) if pos.get('initialMargin') else 0.0
-                    
-                    mark_price = float(pos['markPrice']) if pos.get('markPrice') else 0.0
-                    amount = float(pos['contracts'])
-                    
-                    # Calculate position value in USDT
-                    position_value_usdt = amount * mark_price
-                    
-                    # Try to get leverage from standard field, then info, then fallback
-                    leverage = self.leverage
-                    if pos.get('leverage'):
-                        leverage = float(pos['leverage'])
-                    elif 'info' in pos and 'leverage' in pos['info']:
-                        leverage = float(pos['info']['leverage'])
-                    
-                    # Fallback for margin calculation if API doesn't return it
-                    if initial_margin == 0 and leverage > 0:
-                        entry_value = float(pos['entryPrice']) * amount
-                        initial_margin = entry_value / leverage
-                    
-                    # Calculate effective leverage if initial_margin > 0
-                    if initial_margin > 0:
-                        effective_leverage = position_value_usdt / initial_margin
-                        if leverage == 1 and effective_leverage > 1.5:
-                            leverage = round(effective_leverage)
+                amt = 0.0
+                try:
+                    amt = float(pos.get('contracts', 0) or 0)
+                except Exception:
+                    amt = 0.0
+                if amt == 0:
+                    info = pos.get('info', {})
+                    try:
+                        amt = float(info.get('positionAmt', 0) or 0)
+                    except Exception:
+                        amt = 0.0
+                
+                logger.info(f"DEBUG: Checking pos {pos['symbol']}, amt={amt}")
+                
+                if abs(amt) > 0:
+                    try:
+                        symbol = pos['symbol']
+                        unrealized_pnl = float(pos.get('unrealizedPnl') or 0.0)
+                        initial_margin = float(pos.get('initialMargin') or 0.0)
+                        mark_price = float(pos.get('markPrice') or 0.0)
+                        amount = abs(amt)
+                        position_value_usdt = amount * mark_price
                         
-                    roi = (unrealized_pnl / initial_margin * 100) if initial_margin > 0 else 0.0
-                    
-                    # Get SL/TP for this symbol
-                    sl_price = 0.0
-                    tp_price = 0.0
-                    
-                    # Normalize symbol: SOL/USDT:USDT -> SOLUSDT
-                    raw_symbol_lookup = symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                    base_symbol = symbol.split('/')[0] # e.g. SOL
-                    
-                    # 1. Try orders_by_symbol (Active Orders)
-                    if raw_symbol_lookup in orders_by_symbol:
-                         if orders_by_symbol[raw_symbol_lookup]['sl'] > 0:
-                             sl_price = orders_by_symbol[raw_symbol_lookup]['sl']
-                         if orders_by_symbol[raw_symbol_lookup]['tp'] > 0:
-                             tp_price = orders_by_symbol[raw_symbol_lookup]['tp']
-                             
-                    # 2. Try orders_by_raw_symbol (Algo Orders)
-                    if sl_price == 0:
-                        if raw_symbol_lookup in orders_by_raw_symbol:
-                             sl_val = orders_by_raw_symbol[raw_symbol_lookup]['sl']
-                             if sl_val > 0: sl_price = sl_val
-                        elif base_symbol + "USDT" in orders_by_raw_symbol: # Try SOLUSDT
-                             sl_val = orders_by_raw_symbol[base_symbol + "USDT"]['sl']
-                             if sl_val > 0: sl_price = sl_val
-
-                    if tp_price == 0:
-                        if raw_symbol_lookup in orders_by_raw_symbol:
-                             tp_val = orders_by_raw_symbol[raw_symbol_lookup]['tp']
-                             if tp_val > 0: tp_price = tp_val
-                        elif base_symbol + "USDT" in orders_by_raw_symbol:
-                             tp_val = orders_by_raw_symbol[base_symbol + "USDT"]['tp']
-                             if tp_val > 0: tp_price = tp_val
-                    
-                    if sl_price == 0 and tp_price == 0:
-                         logger.debug(f"[{symbol}] No SL/TP found. Checked: {symbol}, {raw_symbol_lookup}, {base_symbol+'USDT'}. Orders keys: {list(orders_by_symbol.keys())[:5]}... Algos keys: {list(orders_by_raw_symbol.keys())[:5]}...")
-
-                    # Clean symbol for display
-                    display_symbol = symbol.replace(':USDT', '')
-
-                    active_positions[display_symbol] = {
-                        'symbol': display_symbol,
-                        'side': pos['side'], # 'long' or 'short'
-                        'amount': amount,
-                        'position_value_usdt': position_value_usdt,
-                        'entry_price': float(pos['entryPrice']),
-                        'unrealized_pnl': unrealized_pnl,
-                        'pnl_pct': roi,
-                        'liquidation_price': float(pos['liquidationPrice']) if pos.get('liquidationPrice') else 0.0,
-                        'mark_price': mark_price,
-                        'initial_margin': initial_margin,
-                        'roi': roi,
-                        'leverage': leverage,
-                        'sl_price': sl_price,
-                        'tp_price': tp_price,
-                        'entry_time': self.position_entry_times.get(raw_symbol_lookup)
-                    }
+                        leverage = self.leverage
+                        if pos.get('leverage'):
+                            leverage = float(pos['leverage'])
+                        elif 'info' in pos and 'leverage' in pos['info']:
+                            leverage = float(pos['info']['leverage'])
+                        
+                        if initial_margin == 0 and leverage > 0:
+                            entry_value = float(pos.get('entryPrice') or 0.0) * amount
+                            initial_margin = entry_value / leverage
+                        
+                        roi = (unrealized_pnl / initial_margin * 100) if initial_margin > 0 else 0.0
+                        
+                        sl_price = 0.0
+                        tp_price = 0.0
+                        
+                        raw_symbol_lookup = symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                        base_symbol = symbol.split('/')[0]
+                        
+                        if raw_symbol_lookup in orders_by_symbol:
+                             if orders_by_symbol[raw_symbol_lookup]['sl'] > 0:
+                                 sl_price = orders_by_symbol[raw_symbol_lookup]['sl']
+                             if orders_by_symbol[raw_symbol_lookup]['tp'] > 0:
+                                 tp_price = orders_by_symbol[raw_symbol_lookup]['tp']
+                                 
+                        if sl_price == 0:
+                            if raw_symbol_lookup in orders_by_raw_symbol:
+                                 sl_val = orders_by_raw_symbol[raw_symbol_lookup]['sl']
+                                 if sl_val > 0: sl_price = sl_val
+                            elif base_symbol + 'USDT' in orders_by_raw_symbol:
+                                 sl_val = orders_by_raw_symbol[base_symbol + 'USDT']['sl']
+                                 if sl_val > 0: sl_price = sl_val
+                                 
+                        if tp_price == 0:
+                            if raw_symbol_lookup in orders_by_raw_symbol:
+                                 tp_val = orders_by_raw_symbol[raw_symbol_lookup]['tp']
+                                 if tp_val > 0: tp_price = tp_val
+                            elif base_symbol + 'USDT' in orders_by_raw_symbol:
+                                 tp_val = orders_by_raw_symbol[base_symbol + 'USDT']['tp']
+                                 if tp_val > 0: tp_price = tp_val
+                        
+                        display_symbol = symbol.replace(':USDT', '')
+                        
+                        active_positions[display_symbol] = {
+                            'symbol': display_symbol,
+                            'side': pos.get('side', 'long' if amt > 0 else 'short'),
+                            'amount': amount,
+                            'position_value_usdt': position_value_usdt,
+                            'entry_price': float(pos.get('entryPrice') or 0.0),
+                            'unrealized_pnl': unrealized_pnl,
+                            'pnl_pct': roi,
+                            'liquidation_price': float(pos.get('liquidationPrice') or 0.0),
+                            'mark_price': mark_price,
+                            'initial_margin': initial_margin,
+                            'roi': roi,
+                            'leverage': leverage,
+                            'sl_price': sl_price,
+                            'tp_price': tp_price,
+                            'entry_time': self.position_entry_times.get(raw_symbol_lookup)
+                        }
+                    except Exception as e:
+                        logger.error(f"Error processing position {pos.get('symbol', 'unknown')}: {e}")
+                        continue
             return active_positions
         except Exception as e:
             logger.error(f"Error fetching positions: {e}")
@@ -420,8 +475,11 @@ class RealTrader:
 
     def get_position(self):
         """Legacy method: get position for current tracked symbol only"""
-        all_pos = self.get_positions()
-        return all_pos.get(self.symbol)
+        # Optimized: use symbol param to reduce API weight
+        all_pos = self.get_positions(self.symbol)
+        if all_pos:
+            return next(iter(all_pos.values()))
+        return None
 
     def get_total_leverage(self):
         """Calculate total effective leverage across all positions"""
@@ -497,7 +555,9 @@ class RealTrader:
         try:
             # Sync current position state for target symbol
             # We need to filter get_positions() for target_symbol
-            all_pos = self.get_positions()
+            # Optimized: Explicitly fetch status (positions + open orders) for target_symbol
+            # This ensures we don't miss any pending orders for the symbol we are about to trade.
+            all_pos = self.get_positions(target_symbol)
             pos = all_pos.get(target_symbol)
             
             # If we have a position
@@ -678,6 +738,49 @@ class RealTrader:
 
         except Exception as e:
             logger.error(f"Trade execution failed: {e}")
+
+    def close_partial(self, amount: float, symbol: str = None):
+        """
+        Close a partial amount of the position for the given symbol (or default symbol).
+        Uses reduceOnly=True to ensure we don't flip position.
+        """
+        target_symbol = symbol if symbol else self.symbol
+        
+        try:
+            # Fetch positions for target symbol
+            positions = self.get_positions(target_symbol)
+            
+            if not positions:
+                 logger.warning(f"close_partial: No active position for {target_symbol}")
+                 return
+
+            # Take the first position found (should be only one if target_symbol provided)
+            pos = next(iter(positions.values()))
+            
+            side = pos['side']
+            # If long, we sell. If short, we buy.
+            order_side = 'sell' if side == 'long' else 'buy'
+            
+            # Ensure amount is within limits
+            current_qty = float(pos['amount'])
+            if amount > current_qty:
+                amount = current_qty
+                
+            # Execute
+            logger.info(f"Executing Partial Close for {target_symbol}: {order_side} {amount} (reduceOnly)")
+            
+            # Use safe exchange call
+            # Use target_symbol (CCXT symbol) for order creation
+            # Note: pos['symbol'] might be display symbol, use target_symbol
+            order = self._safe_exchange_call('create_order', target_symbol, 'market', order_side, amount, params={'reduceOnly': True})
+            
+            logger.info(f"Partial Close executed: {order['id']}")
+            
+            if self.notifier:
+                self.notifier.send_text(f"💰 Partial Close (TP): {target_symbol}\nAmount: {amount}\nPrice: {order.get('average', 'Market')}")
+                
+        except Exception as e:
+            logger.error(f"Error in close_partial: {e}")
 
     def _close_position_by_symbol(self, symbol, pos):
         """Helper to close position for a specific symbol"""
@@ -872,8 +975,9 @@ class RealTrader:
     def start(self):
         self.active = True
         logger.info("Real trading started.")
-        # Auto-repair SL orders on start
+        # Auto-repair SL orders and clean stale pending orders on start
         try:
+            self.cleanup_stale_orders()
             self.repair_orders()
         except Exception as e:
             logger.error(f"Failed to auto-repair orders on start: {e}")
@@ -1115,8 +1219,20 @@ class RealTrader:
         if not self.exchange: return
         
         try:
-            positions = self.get_positions()
+            # Optimized: Only check positions for the current symbol to save API weight
+            # get_positions(self.symbol) will try to fetch only for this symbol if possible
+            # or filter the result.
+            positions = self.get_positions(self.symbol)
+            
             for symbol, pos in positions.items():
+                # Double check symbol match
+                # Normalized symbol comparison
+                norm_sym = symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                norm_self = self.symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                
+                if norm_sym != norm_self:
+                    continue
+
                 sl_price = pos.get('sl_price', 0.0)
                 tp_price = pos.get('tp_price', 0.0)
                 
@@ -1173,6 +1289,102 @@ class RealTrader:
         except Exception as e:
             logger.error(f"Error in repair_orders: {e}")
 
+    def cleanup_stale_orders(self):
+        """
+        Cancel open orders that no longer have an associated active position.
+        This is mainly used to clean up old pending orders that may block new trades.
+        """
+        if not self.exchange:
+            return
+
+        try:
+            # OPTIMIZATION: If self.symbol is set, only check for that symbol
+            # This reduces API weight significantly (1 vs 40 for open orders)
+            if self.symbol:
+                # 1. Check if we have an active position for this symbol
+                # Use get_positions to leverage existing logic (returns dict)
+                positions = self.get_positions(self.symbol)
+                has_position = len(positions) > 0
+                
+                # 2. Fetch open orders for this symbol ONLY
+                try:
+                    open_orders = self._safe_exchange_call('fetch_open_orders', self.symbol)
+                except Exception as e:
+                    logger.warning(f"cleanup_stale_orders: Failed to fetch open orders for {self.symbol}: {e}")
+                    return
+
+                if not open_orders:
+                    return
+
+                # 3. If no active position, cancel all orders (stale SL/TP or entry)
+                # If active position exists, we keep orders (likely active SL/TP)
+                if not has_position:
+                    logger.info(f"cleanup_stale_orders: No active position for {self.symbol}. Cancelling {len(open_orders)} stale orders.")
+                    for order in open_orders:
+                        try:
+                            self._safe_exchange_call('cancel_order', order['id'], self.symbol)
+                        except Exception as e:
+                            logger.warning(f"cleanup_stale_orders: Failed to cancel order {order['id']}: {e}")
+                else:
+                    # Optional: Check if orders match current position size? 
+                    # For now, just keeping them is safer than cancelling active SL/TP.
+                    pass
+                
+                return
+
+            # FALLBACK: Global cleanup (original logic)
+            # 1. Fetch current positions and collect active symbols
+            raw_positions = self._safe_exchange_call('fetch_positions')
+            active_raw_symbols = set()
+
+            for pos in raw_positions:
+                try:
+                    contracts = float(pos.get('contracts', 0) or 0)
+                except Exception:
+                    contracts = 0.0
+
+                # Fallback: some exchanges may expose position size only in info
+                if contracts == 0:
+                    info = pos.get('info', {})
+                    try:
+                        contracts = float(info.get('positionAmt', 0) or 0)
+                    except Exception:
+                        contracts = 0.0
+
+                if abs(contracts) > 0:
+                    raw_sym = pos['symbol'].replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                    active_raw_symbols.add(raw_sym)
+
+            # 2. Fetch all standard open orders (global). This call is heavy; use sparingly.
+            try:
+                open_orders = self._safe_exchange_call('fetch_open_orders')
+            except Exception as e:
+                logger.warning(f"cleanup_stale_orders: Failed to fetch open orders: {e}")
+                open_orders = []
+
+            stale_count = 0
+
+            for order in open_orders:
+                sym = order.get('symbol')
+                if not sym:
+                    continue
+
+                raw_sym = sym.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                if raw_sym not in active_raw_symbols:
+                    order_id = order.get('id')
+                    logger.info(f"cleanup_stale_orders: Cancel stale order {order_id} on {sym} (no active position)")
+                    try:
+                        self._safe_exchange_call('cancel_order', order_id, sym)
+                        stale_count += 1
+                    except Exception as e:
+                        logger.warning(f"cleanup_stale_orders: Failed to cancel order {order_id} on {sym}: {e}")
+
+            if stale_count > 0:
+                logger.info(f"cleanup_stale_orders: Cancelled {stale_count} stale open orders.")
+
+        except Exception as e:
+            logger.error(f"cleanup_stale_orders: Unexpected error: {e}")
+
     def set_amount(self, amount_usdt: float):
         self.amount_usdt = amount_usdt
         logger.info(f"Updated trade amount to {amount_usdt} USDT")
@@ -1187,23 +1399,22 @@ class RealTrader:
                 "start_time": self.start_time.isoformat()
             }
             
-        # User requested ALL history, so we increase limit and remove time filter
+        # User requested ALL history
+        # We try to fetch as many as possible (up to 1000 is usually the max for one call)
+        # If user has > 1000 trades, we might need pagination, but let's start with max limit.
         trades = self.get_recent_trades(limit=1000)
-        # Previously filtered by 24h, now using all fetched trades
-        # since_ts = int((datetime.now().timestamp() - 86400) * 1000)
-        # trades = [t for t in trades if t['timestamp'] >= since_ts]
-        
-        # Calculate Total PnL (Realized PnL - Commission)
-        # Binance realizedPnl usually includes commission for the trade pnl, but 'fee' field is separate.
-        # Let's sum realized_pnl and subtract fee cost if not included. 
-        # Actually, for Binance Futures, 'realizedPnl' is gross pnl usually? No, it is net of funding fees but maybe not trading fees.
-        # However, to be safe and match user expectation: User sees -0.31 PnL and -0.1 Fee -> Total -0.41.
-        # Let's check if realized_pnl already includes fee. 
-        # If the user sees -0.31 in "Realized PnL" column and -0.1 in "Fee", and expects -0.41 total, 
-        # it implies they want (Realized PnL - Fee).
         
         total_pnl = 0.0
         total_fees = 0.0
+        
+        # Filter for closed trades (realized pnl != 0)
+        # Note: Some exchanges/APIs might return realizedPnl even for open positions (funding fees),
+        # but usually for 'myTrades', realizedPnl is finalized pnl.
+        # We'll consider any trade with realized_pnl != 0 as a PnL event.
+        
+        closed_trades_count = 0
+        winning_trades_count = 0
+        
         for t in trades:
             pnl = t.get('realized_pnl', 0.0)
             fee = 0.0
@@ -1213,40 +1424,30 @@ class RealTrader:
                 elif isinstance(t['fee'], (int, float)):
                     fee = float(t['fee'])
             
-            # If it's a closing trade (realized_pnl != 0), we sum it.
-            # But fees apply to both opening and closing trades.
-            # So we should sum realized_pnl for all trades (opening trades have 0 realized pnl)
-            # and subtract all fees.
+            # Aggregate Totals
+            # PnL in trade history usually doesn't subtract fee, so we do it manually to get Net PnL
+            net_pnl = pnl - fee
             
-            total_pnl += pnl - fee
+            total_pnl += net_pnl
             total_fees += fee
+            
+            # Win Rate Logic
+            # Only count "closing" trades or trades that have realized PnL
+            # Opening trades usually have 0 realized PnL (except maybe funding?)
+            # We strictly count trades where realized_pnl is non-zero OR where fees were paid (breakeven exit)
+            if abs(pnl) > 0 or fee > 0:
+                closed_trades_count += 1
+                if net_pnl > 0:
+                    winning_trades_count += 1
         
-        # Count winning/losing trades (only count those with realized pnl != 0 to avoid opening trades)
-        closed_trades = [t for t in trades if abs(t['realized_pnl']) > 0]
-        
-        # Winning trade: Realized PnL - Fee > 0 (Net PnL)
-        winning_trades = []
-        for t in closed_trades:
-             pnl = t.get('realized_pnl', 0.0)
-             fee = 0.0
-             if t.get('fee'):
-                if isinstance(t['fee'], dict):
-                    fee = float(t['fee'].get('cost', 0.0))
-                elif isinstance(t['fee'], (int, float)):
-                    fee = float(t['fee'])
-             
-             if (pnl - fee) > 0:
-                 winning_trades.append(t)
-        total_closed = len(closed_trades)
-        
-        win_rate = (len(winning_trades) / total_closed * 100) if total_closed > 0 else 0.0
+        win_rate = (winning_trades_count / closed_trades_count * 100) if closed_trades_count > 0 else 0.0
         
         duration = datetime.now() - self.start_time
         duration_str = str(duration).split('.')[0] # HH:MM:SS
         
         return {
             "win_rate": win_rate,
-            "total_trades": total_closed, # Only counting closed for stats
+            "total_trades": closed_trades_count,
             "total_pnl": total_pnl,
             "total_fees": total_fees,
             "duration": duration_str,

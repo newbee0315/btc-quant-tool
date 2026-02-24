@@ -180,7 +180,8 @@ MONITORED_SYMBOLS = [
     'LTC/USDT:USDT', 'DOT/USDT:USDT', 'BCH/USDT:USDT', 'SHIB/USDT:USDT', 'MATIC/USDT:USDT',
     'NEAR/USDT:USDT', 'APT/USDT:USDT', 'FIL/USDT:USDT', 'ATOM/USDT:USDT', 'ARB/USDT:USDT',
     'OP/USDT:USDT', 'ETC/USDT:USDT', 'ICP/USDT:USDT', 'RNDR/USDT:USDT', 'INJ/USDT:USDT',
-    'STX/USDT:USDT', 'LDO/USDT:USDT', 'VET/USDT:USDT', 'XLM/USDT:USDT', 'PEPE/USDT:USDT'
+    'STX/USDT:USDT', 'LDO/USDT:USDT', 'VET/USDT:USDT', 'XLM/USDT:USDT', 'PEPE/USDT:USDT',
+    'OPN/USDT:USDT'
 ]
 
 # Initialize Trader based on loaded config
@@ -428,9 +429,20 @@ async def send_hourly_monitor_report():
                 pnl = pos.get('unrealized_pnl', 0.0)
                 roi_val = pos.get('pnl_pct', 0.0)
                 lev = pos.get('leverage', 1)
+                
+                # New fields
+                pos_val = pos.get('position_value_usdt', 0.0)
+                entry_price = pos.get('entry_price', 0.0)
+                mark_price = pos.get('mark_price', 0.0)
+                
                 # Ensure symbol is clean (though get_positions should have cleaned it)
                 clean_sym = sym.replace(':USDT', '')
-                msg += f"- {clean_sym} {lev}x {side}: {pnl:+.2f}U ({roi_val:+.2f}%)\n"
+                
+                msg += (
+                    f"- {clean_sym} {lev}x {side}\n"
+                    f"  持仓: ${pos_val:.2f} | PnL: {pnl:+.2f}U ({roi_val:+.2f}%)\n"
+                    f"  开仓: {entry_price:.4f} | 现价: {mark_price:.4f}\n"
+                )
             msg += "----------------\n"
 
         msg += f"时间: {bj_time}"
@@ -548,30 +560,41 @@ async def lifespan(app: FastAPI):
             if os.path.exists(log_path):
                 try:
                     mtime = os.path.getmtime(log_path)
-                    stale = (datetime.now().timestamp() - mtime) > 3600
+                    stale = (datetime.now().timestamp() - mtime) > 300 # 5 minutes
                 except:
                     stale = True
-            # Throttle restarts to at most once per 60 minutes
+            # Throttle restarts to at most once per 5 minutes
             global _last_bot_start_ts
             if '_last_bot_start_ts' not in globals():
                 _last_bot_start_ts = 0.0
-            can_start = (time.time() - _last_bot_start_ts) > 3600
+            can_start = (time.time() - _last_bot_start_ts) > 300
             if stale and can_start:
                 try:
-                    subprocess.Popen(
-                        ["python", "scripts/run_multicoin_bot.py"],
-                        cwd=os.getcwd(),
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    logger.info("Watchdog started run_multicoin_bot.py")
-                    _last_bot_start_ts = time.time()
+                    # Check if process is already running to avoid duplicates
+                    # Using pgrep -f run_multicoin_bot.py
+                    try:
+                        check = subprocess.run(["pgrep", "-f", "run_multicoin_bot.py"], capture_output=True)
+                        if check.returncode == 0:
+                            logger.info("run_multicoin_bot.py is already running (pid found).")
+                            stale = False # Override stale if process exists
+                    except:
+                        pass
+                
+                    if stale:
+                        subprocess.Popen(
+                            ["python", "scripts/run_multicoin_bot.py"],
+                            cwd=os.getcwd(),
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        logger.info("Watchdog started run_multicoin_bot.py")
+                        _last_bot_start_ts = time.time()
                 except Exception as e:
                     logger.error(f"Watchdog failed to start run_multicoin_bot.py: {e}")
         except Exception as e:
             logger.error(f"Services watchdog error: {e}")
 
-    scheduler.add_job(services_watchdog, IntervalTrigger(minutes=30), id='services_watchdog', replace_existing=True, misfire_grace_time=600, coalesce=True, max_instances=1)
+    scheduler.add_job(services_watchdog, IntervalTrigger(minutes=5), id='services_watchdog', replace_existing=True, misfire_grace_time=600, coalesce=True, max_instances=1)
 
     if isinstance(paper_trader, RealTrader) and paper_trader.active:
         # Record every 1 hour
@@ -864,7 +887,27 @@ async def test_notification():
 @app.get("/api/v1/status")
 async def get_system_status():
     """Get overall system status including trader status and strategy logs"""
-    trader_status = trader.get_status()
+    # Priority: Read from shared status file if in Real Mode
+    # This ensures we see positions from the Multicoin Bot
+    trader_status = None
+    if trader_config.mode == "real":
+         try:
+             status_file = "data/real_trading_status.json"
+             if os.path.exists(status_file):
+                 with open(status_file, "r") as f:
+                     status = json.load(f)
+                     # Check freshness (e.g. < 5 mins old)
+                     updated_at = float(status.get('updated_at', 0))
+                     if time.time() - updated_at < 300: # 5 minutes
+                         trader_status = status
+                     else:
+                         logger.warning(f"Status file stale (age: {time.time() - updated_at:.1f}s). Falling back to direct fetch.")
+         except Exception as e:
+             logger.error(f"Failed to read real trading status file: {e}")
+
+    if not trader_status:
+        trader_status = trader.get_status()
+        
     strategy_logs = strategy.get_logs() if hasattr(strategy, 'get_logs') else []
     
     return {
@@ -1171,6 +1214,24 @@ async def reset_paper_trading():
 @app.get("/api/v1/paper/status")
 async def get_paper_status():
     try:
+        # Priority: Read from shared status file if in Real Mode
+        # This avoids API rate limits and ensures consistency with the running bot
+        if trader_config.mode == "real":
+             try:
+                 status_file = "data/real_trading_status.json"
+                 if os.path.exists(status_file):
+                     with open(status_file, "r") as f:
+                         status = json.load(f)
+                         # Check freshness (e.g. < 5 mins old)
+                         updated_at = float(status.get('updated_at', 0))
+                         if time.time() - updated_at < 300: # 5 minutes
+                             return status
+                         else:
+                             logger.warning(f"Status file stale (age: {time.time() - updated_at:.1f}s). Falling back to direct fetch.")
+             except Exception as e:
+                 logger.error(f"Failed to read real trading status file: {e}")
+
+        # Fallback: Direct Fetch (Paper Mode or Stale File)
         # We need current price for equity calc
         loop = asyncio.get_running_loop()
         ticker = await loop.run_in_executor(None, collector.fetch_current_price)
