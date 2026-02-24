@@ -159,6 +159,10 @@ class PortfolioManager:
                 clean_sym = symbol.replace('/', '').replace(':USDT', '')
                 if clean_sym in self.active_symbols:
                     continue
+
+                # Filter out leveraged tokens
+                if 'UP' in clean_sym or 'DOWN' in clean_sym or 'BULL' in clean_sym or 'BEAR' in clean_sym:
+                    continue
                 
                 # Filter out low volume coins to avoid scam wicks
                 if ticker['quoteVolume'] < 10_000_000: # Min $10M volume
@@ -382,6 +386,46 @@ class PortfolioManager:
         results.sort(key=lambda x: abs(x["avg_probability"] - 0.5), reverse=True)
         
         return results
+
+    def _calculate_position_size(self, symbol, current_price, signal, volatility=0):
+        """
+        Calculate position size based on risk management rules.
+        """
+        if current_price <= 0:
+            return 0.0
+            
+        cfg = self.config_manager.get_config()
+        
+        # 1. Base Size: Dynamic % of Total Equity
+        # Strategy: 10% - 15% of Equity per trade for compounding
+        total_equity = 100.0 # Default
+        try:
+            # Try to get real equity from first trader
+            # In live mode, this should be updated from bot loop
+            # Here we might need a better way to get equity if not passed in
+            pass 
+        except:
+            pass
+            
+        # Use risk_per_trade as percentage of equity for position size (not risk amount)
+        # We reinterpret 'risk_per_trade' in config:
+        # If it's small (< 0.1), it's risk amount %.
+        # If it's large (> 0.1), we treat it as Position Size % (e.g. 0.15 = 15% position)
+        
+        risk_param = float(cfg.get('risk_per_trade', 0.02))
+        
+        # Default fixed amount if using fixed mode
+        amount_usdt = float(cfg.get('amount_usdt', 20.0))
+        
+        # If we can't access real equity here easily, we rely on the bot loop to enforce limits.
+        # But we can return a "suggested_usdt" value.
+        
+        # In this simplified PM, we'll return None for 'amount_coins' 
+        # and let run_multicoin_bot.py handle the actual sizing based on real-time equity.
+        # The bot loop already has logic: "Min Position 1.5 * Equity"
+        # We will enhance bot loop logic instead.
+        
+        return None
 
 if __name__ == "__main__":
     # Test Run
