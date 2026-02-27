@@ -39,14 +39,15 @@
     2.  **高胜率增强**: 若交易次数 > 5 且 胜率 > 60%，自动**降低** ML 预测置信度阈值 (0.65 -> 0.55)，增加出手频率，扩大收益。
     3.  **回撤风控**: 若总亏损超过 100 USDT，自动**降低**单笔交易风险比例 (Risk Per Trade)，保护本金。
 
-## 4. 服务进程一览
+## 4. 服务进程一览 (本地运行模式)
 
 | 服务类型 | 启动命令 | 端口/PID | 说明 |
 | :--- | :--- | :--- | :--- |
-| **后端 API & 调度器** | `uvicorn src.api.main:app` | Port 8000 | 核心服务，承载 API 接口和上述所有定时任务。 |
+| **后端 API & 调度器** | `python src/api/main.py` | Port 8000 | 核心服务，承载 API 接口和上述所有定时任务。 |
 | **实盘交易机器人** | `python scripts/run_multicoin_bot.py` | PID (动态) | 独立运行的交易执行单元。 |
-| **前端页面** | `npm run dev` | Port 3000 | 数据展示与监控界面。 |
-| **手动数据更新** | `bash scripts/daily_update.sh` | CLI | 手动触发每日数据更新与模型重训。 |
+| **前端页面** | `npm run dev` (在 frontend 目录) | Port 3000 | 数据展示与监控界面。 |
+| **模型自动进化** | `python scripts/auto_optimizer.py` | PID (动态) | 后台持续训练与优化 XGBoost 模型。 |
+| **手动数据更新** | `python scripts/daily_update.py` | CLI | 手动触发每日数据更新与模型重训。 |
 
 ## 5. 日志与稳健性
 - `api_server.log` 启用滚动日志（10MB × 5），避免长期运行磁盘膨胀。
