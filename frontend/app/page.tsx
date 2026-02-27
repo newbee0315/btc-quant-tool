@@ -968,7 +968,7 @@ export default function Home() {
                                     const displaySymbol = symbol.replace(':USDT', '');
 
                                     return (
-                                        <div key={symbol} className="flex flex-col gap-2 bg-gray-100 dark:bg-gray-200 dark:bg-[#2B3139]/20 p-3 rounded-lg border border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50 shadow-sm hover:border-yellow-500/50 dark:hover:border-[#F0B90B]/50 transition-colors duration-200">
+                                        <div key={symbol} className="flex flex-col gap-2 bg-gray-100 dark:bg-[#2B3139]/30 p-3 rounded-lg border border-gray-200 dark:border-[#2B3139] shadow-sm hover:border-yellow-500/50 dark:hover:border-[#F0B90B]/50 transition-colors duration-200">
                                             <div className="flex items-center justify-between border-b border-gray-200 dark:border-[#2B3139] pb-2">
                                                 <div className="flex items-center gap-2">
                                                     <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${pos.side === 'long' ? 'bg-green-100 dark:bg-[#0ECB81]/20 text-green-600 dark:text-[#0ECB81]' : 'bg-red-100 dark:bg-[#F6465D]/20 text-red-600 dark:text-[#F6465D]'}`}>
@@ -1036,7 +1036,7 @@ export default function Home() {
                             </div>
                             <div className="overflow-y-auto flex-1">
                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-gray-100 dark:bg-gray-300 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
+                                    <thead className="bg-gray-100 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Entry Time (CN)</th>
                                             <th className="px-3 py-2 font-medium">Exit Time (CN)</th>
@@ -1049,11 +1049,12 @@ export default function Home() {
                                             <th className="px-3 py-2 font-medium text-right">PnL</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-[#2B3139]">
+                                    <tbody className="divide-y divide-gray-200 dark:divide-[#2B3139]">
                                         {trader?.trade_history && trader.trade_history.length > 0 ? (
                                             trader.trade_history.map((trade) => {
                                                 // Only show closed trades (those with PnL and Entry/Exit info)
-                                                if (!trade.realized_pnl || trade.realized_pnl === 0) return null;
+                                                const feeCost = typeof (trade as any).fee === 'number' ? (trade as any).fee : ((trade as any).fee?.cost ?? 0);
+                                                if ((!trade.realized_pnl || trade.realized_pnl === 0) && !feeCost) return null;
                                                 
                                                 const isWin = (trade.realized_pnl || 0) > 0;
                                                 const pnlColor = isWin ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
@@ -1072,7 +1073,7 @@ export default function Home() {
                                                 }
 
                                                 return (
-                                                    <tr key={trade.id} className="hover:bg-gray-100 dark:bg-[#2B3139]/30 transition-colors">
+                                                    <tr key={trade.id} className="hover:bg-gray-100 dark:hover:bg-[#2B3139]/30 transition-colors">
                                                         <td className="px-3 py-2 font-mono text-gray-900 dark:text-[#EAECEF]">
                                                             {entryTime ? new Date(entryTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
                                                         </td>
@@ -1145,7 +1146,7 @@ export default function Home() {
                             </div>
                             <div className="overflow-y-auto flex-1">
                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-gray-100 dark:bg-gray-300 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
+                                    <thead className="bg-gray-100 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Symbol</th>
                                             <th className="px-3 py-2 font-medium">Signal</th>
@@ -1157,7 +1158,7 @@ export default function Home() {
                                             <th className="px-3 py-2 font-medium">Note</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-[#2B3139]">
+                                    <tbody className="divide-y divide-gray-200 dark:divide-[#2B3139]">
                                         {signalsError ? (
                                             <tr>
                                                 <td colSpan={8} className="px-3 py-8 text-center text-red-600 dark:text-[#F6465D]">
@@ -1188,7 +1189,7 @@ export default function Home() {
                                                 const indicators = signal.strategy_result?.indicators;
                                                 
                                                 return (
-                                                    <tr key={`${signal.symbol}-${index}`} className="hover:bg-gray-100 dark:bg-[#2B3139]/30 border-b border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50">
+                                                    <tr key={`${signal.symbol}-${index}`} className="hover:bg-gray-100 dark:hover:bg-[#2B3139]/30 border-b border-gray-200 dark:border-[#2B3139]/50">
                                                         <td className="px-3 py-2 font-bold text-gray-900 dark:text-[#EAECEF]">
                                                             {signal.symbol}
                                                             <span className="block text-[10px] text-gray-500 dark:text-[#848E9C] font-mono">

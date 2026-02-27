@@ -149,13 +149,39 @@ class FeishuBot:
         
         return results
 
+    def _send_request(self, data: Dict, msg_type: str, log_content: str):
+        if not self.webhook_url:
+            self._log_message(msg_type, log_content, False, "No webhook URL configured")
+            return
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Connection': 'close',  # Prevent keep-alive issues
+            'User-Agent': 'curl/7.64.1' # Mimic curl to avoid potential blocking
+        }
+        
+        # Use Session for better connection handling
+        session = requests.Session()
+        session.trust_env = False # Ignore proxy env vars just in case
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Sending to Feishu (Attempt {attempt+1}/{max_retries}): {self.webhook_url[:10]}... Payload: {json.dumps(data)}")
+                response = session.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=15)
+                logger.info(f"Feishu Response: {response.status_code} - {response.text}")
+                response.raise_for_status()
+                self._log_message(msg_type, log_content, True)
+                return # Success
+            except Exception as e:
+                logger.error(f"Feishu send {msg_type} error (Attempt {attempt+1}): {e}")
+                if attempt == max_retries - 1:
+                    self._log_message(msg_type, log_content, False, str(e))
+                else:
+                    time.sleep(2) # Wait before retry
+
     def send_text(self, text: str):
         """Send plain text message (Only used for Monitor Report now)"""
-        if not self.webhook_url:
-            self._log_message("text", text, False, "No webhook URL configured")
-            return
-        
-        headers = {'Content-Type': 'application/json'}
         # Prepend 'Test:' to ensure delivery if user has keyword restrictions
         # User reported only receiving 'Test from CLI', implying 'Test' is a required keyword.
         safe_text = f"Test: {text}" if "Test" not in text else text
@@ -167,29 +193,10 @@ class FeishuBot:
             }
         }
         
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Sending to Feishu (Attempt {attempt+1}/{max_retries}): {self.webhook_url[:10]}... Payload: {json.dumps(data)}")
-                response = requests.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=10)
-                logger.info(f"Feishu Response: {response.status_code} - {response.text}")
-                response.raise_for_status()
-                self._log_message("text", text, True)
-                return # Success
-            except Exception as e:
-                logger.error(f"Feishu send text error (Attempt {attempt+1}): {e}")
-                if attempt == max_retries - 1:
-                    self._log_message("text", text, False, str(e))
-                else:
-                    time.sleep(2) # Wait before retry
+        self._send_request(data, "text", text)
 
     def send_markdown(self, text: str, title: str = None):
         """Send markdown message using Interactive Card"""
-        if not self.webhook_url:
-            self._log_message("markdown", text, False, "No webhook URL configured")
-            return
-        
-        headers = {'Content-Type': 'application/json'}
         
         # Ensure "Test" keyword if needed
         safe_title = title
@@ -232,21 +239,7 @@ class FeishuBot:
             "card": card
         }
         
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Sending to Feishu (Attempt {attempt+1}/{max_retries}): {self.webhook_url[:10]}... Payload: {json.dumps(data)}")
-                response = requests.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=10)
-                logger.info(f"Feishu Response: {response.status_code} - {response.text}")
-                response.raise_for_status()
-                self._log_message("markdown", text, True)
-                return # Success
-            except Exception as e:
-                logger.error(f"Feishu send markdown error (Attempt {attempt+1}): {e}")
-                if attempt == max_retries - 1:
-                    self._log_message("markdown", text, False, str(e))
-                else:
-                    time.sleep(2) # Wait before retry
+        self._send_request(data, "markdown", text)
 
     def send_trade_card(self, action: str, symbol: str, price: float, amount: float, pnl: float = None, reason: str = "", prob: float = None, sl: float = None, tp: float = None):
         """

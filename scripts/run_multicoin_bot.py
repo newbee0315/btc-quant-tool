@@ -491,7 +491,11 @@ def main():
                         sl_price=sl_price,
                         tp_price=tp_price,
                         leverage=int(final_leverage),
-                        amount_coins=amount_coins
+                        amount_coins=amount_coins,
+                        entry_style=trade_params.get('entry_style'),
+                        grid_levels=trade_params.get('grid_levels'),
+                        grid_spacing_pct=trade_params.get('grid_spacing_pct'),
+                        grid_wait_s=trade_params.get('grid_wait_s'),
                     )
             
             logger.info("Sleeping for 120s...")

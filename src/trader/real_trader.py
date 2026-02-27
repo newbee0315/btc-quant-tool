@@ -24,6 +24,17 @@ class RealTrader:
         self.equity_recorder = EquityRecorder()
         self.config_manager = config_manager
         
+        # Load leverage from config if available to override default
+        try:
+            cfg = self.config_manager.get_config()
+            # Check for 'leverage' or 'max_portfolio_leverage'
+            config_lev = cfg.get('leverage') or cfg.get('max_portfolio_leverage')
+            if config_lev:
+                self.leverage = min(int(float(config_lev)), 10)
+                logger.info(f"Loaded leverage from config: {self.leverage}x")
+        except Exception as e:
+            logger.warning(f"Failed to load leverage from config: {e}")
+
         # Fallback: Load proxy from config if not provided
         if not self.proxy_url:
             try:
@@ -730,7 +741,80 @@ class RealTrader:
             logger.error(f"Smart Entry Failed: {e}. Fallback to Market.")
             return self._safe_exchange_call('create_order', symbol, 'MARKET', side, amount)
 
-    def execute_trade(self, signal: int, sl_pct: float = 0.03, tp_pct: float = 0.025, sl_price: float = None, tp_price: float = None, leverage: int = None, amount_coins: float = None, symbol: str = None):
+    def _grid_entry(self, symbol: str, side: str, amount: float, levels: int = 3, spacing_pct: float = 0.0015, wait_s: int = 6):
+        try:
+            ticker = self._safe_exchange_call('fetch_ticker', symbol)
+            base_price = float(ticker['bid']) if side == 'buy' else float(ticker['ask'])
+            base_price = float(self.exchange.price_to_precision(symbol, base_price))
+
+            levels = max(1, int(levels or 1))
+            spacing_pct = float(spacing_pct or 0.0)
+            wait_s = max(1, int(wait_s or 1))
+
+            chunk_size = amount / levels
+            chunk_size = float(self.exchange.amount_to_precision(symbol, chunk_size))
+            last_chunk = amount - (chunk_size * (levels - 1))
+            last_chunk = float(self.exchange.amount_to_precision(symbol, last_chunk))
+
+            placed_orders = []
+            for i in range(levels):
+                qty = last_chunk if i == levels - 1 else chunk_size
+                if qty <= 0:
+                    continue
+                level_price = base_price * (1 - spacing_pct * i) if side == 'buy' else base_price * (1 + spacing_pct * i)
+                level_price = float(self.exchange.price_to_precision(symbol, level_price))
+                o = self._safe_exchange_call('create_order', symbol, 'LIMIT', side, qty, level_price, params={'timeInForce': 'GTC'})
+                placed_orders.append(o)
+
+            start_time = time.time()
+            while time.time() - start_time < wait_s:
+                time.sleep(1)
+
+            total_filled = 0.0
+            total_cost = 0.0
+            for o in placed_orders:
+                try:
+                    st = self._safe_exchange_call('fetch_order', o['id'], symbol)
+                except Exception:
+                    continue
+
+                filled = float(st.get('filled') or 0.0)
+                avg = st.get('average')
+                px = float(avg) if avg else float(st.get('price') or o.get('price') or base_price)
+
+                total_filled += filled
+                total_cost += filled * px
+
+                if st.get('status') not in ('closed', 'canceled'):
+                    try:
+                        self._safe_exchange_call('cancel_order', o['id'], symbol)
+                    except Exception:
+                        pass
+
+            remaining = amount - total_filled
+            last_order = placed_orders[-1] if placed_orders else {}
+            if remaining > 0:
+                remaining = float(self.exchange.amount_to_precision(symbol, remaining))
+                chase = self._smart_entry(symbol, side, remaining, timeout=3)
+                chase_filled = float(chase.get('filled') or remaining)
+                chase_avg = chase.get('average')
+                chase_px = float(chase_avg) if chase_avg else base_price
+                total_filled += chase_filled
+                total_cost += chase_filled * chase_px
+                last_order = chase
+
+            avg_price = (total_cost / total_filled) if total_filled > 0 else base_price
+            result = dict(last_order) if isinstance(last_order, dict) else {}
+            result['filled'] = total_filled
+            result['average'] = avg_price
+            if total_filled >= amount * 0.999:
+                result['status'] = 'closed'
+            return result
+        except Exception as e:
+            logger.error(f"Grid Entry Failed: {e}. Fallback to Smart Entry.")
+            return self._smart_entry(symbol, side, amount, timeout=5)
+
+    def execute_trade(self, signal: int, sl_pct: float = None, tp_pct: float = None, sl_price: float = None, tp_price: float = None, leverage: int = None, amount_coins: float = None, symbol: str = None, entry_style: str = None, grid_levels: int = None, grid_spacing_pct: float = None, grid_wait_s: int = None):
         """
         Execute trade based on signal.
         signal: 1 (Buy Long), -1 (Sell Short), 0 (Close/Hold - not fully implemented for 0)
@@ -785,6 +869,17 @@ class RealTrader:
                         logger.info(f"Set dynamic leverage to {current_leverage}x for {target_symbol}")
                     except Exception as e:
                         logger.warning(f"Could not set dynamic leverage: {e}")
+
+                # Load SL/TP defaults from config if not provided
+                try:
+                    cfg = self.config_manager.get_config()
+                    if sl_pct is None:
+                        sl_pct = float(cfg.get('sl_pct', 0.02))
+                    if tp_pct is None:
+                        tp_pct = float(cfg.get('tp_pct', 0.06))
+                except Exception:
+                    sl_pct = sl_pct or 0.02
+                    tp_pct = tp_pct or 0.06
 
                 # Calculate amount
                 try:
@@ -871,9 +966,17 @@ class RealTrader:
                 else:
                     # Standard Execution (Smart Entry Phase 4)
                     try:
-                        # Use Smart Entry (Limit -> Market Chase)
-                        # Timeout 5s for High Frequency context
-                        order = self._smart_entry(target_symbol, side, amount, timeout=5)
+                        if (entry_style or "").lower() == "grid":
+                            order = self._grid_entry(
+                                target_symbol,
+                                side,
+                                amount,
+                                levels=grid_levels or 3,
+                                spacing_pct=grid_spacing_pct if grid_spacing_pct is not None else 0.0015,
+                                wait_s=grid_wait_s or 6,
+                            )
+                        else:
+                            order = self._smart_entry(target_symbol, side, amount, timeout=5)
                         
                         logger.info(f"Order placed: {order['id']}")
                         executed_amount = float(order['filled']) if order.get('filled') else amount
@@ -908,16 +1011,18 @@ class RealTrader:
                     sl_side = 'sell'
                 else:
                     sl_side = 'buy'
+
+                sltp_amount = float(self.exchange.amount_to_precision(target_symbol, executed_amount if executed_amount > 0 else amount))
                 
                 # Stop Loss (Hard SL is good for safety)
                 # Use reduceOnly instead of closePosition to avoid API error -4130 if existing orders conflict
-                self._safe_exchange_call('create_order', target_symbol, 'STOP_MARKET', sl_side, amount, params={
+                self._safe_exchange_call('create_order', target_symbol, 'STOP_MARKET', sl_side, sltp_amount, params={
                     'stopPrice': self.exchange.price_to_precision(target_symbol, real_sl),
                     'reduceOnly': True 
                 })
                 
                 # Take Profit (Hard TP)
-                self._safe_exchange_call('create_order', target_symbol, 'TAKE_PROFIT_MARKET', sl_side, amount, params={
+                self._safe_exchange_call('create_order', target_symbol, 'TAKE_PROFIT_MARKET', sl_side, sltp_amount, params={
                     'stopPrice': self.exchange.price_to_precision(target_symbol, real_tp),
                     'reduceOnly': True
                 })
@@ -1221,202 +1326,193 @@ class RealTrader:
             # --- Entry Time Matching Logic ---
             # Sort by timestamp ASC to simulate position history
             trades.sort(key=lambda x: x['timestamp'])
-            
-            symbol_tracker = {} # { symbol: {'qty': 0.0, 'entry_time': None} }
-            trade_entry_times = {} # { trade_id: entry_timestamp }
+            symbol_state = {}
+            closed_roundtrips = []
+
+            def _fee_cost(fee_obj) -> float:
+                if isinstance(fee_obj, dict):
+                    try:
+                        return float(fee_obj.get('cost', 0.0))
+                    except Exception:
+                        return 0.0
+                if isinstance(fee_obj, (int, float)):
+                    return float(fee_obj)
+                return 0.0
 
             for t in trades:
                 sym = t['symbol'].replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                if sym not in symbol_tracker:
-                    symbol_tracker[sym] = {'qty': 0.0, 'entry_time': None}
-                
-                tracker = symbol_tracker[sym]
-                side = t['side']
-                amount = float(t['amount'])
-                qty_change = amount if side == 'buy' else -amount
-                
-                prev_qty = tracker['qty']
-                new_qty = prev_qty + qty_change
-                
-                # Case 1: Open New Position (0 -> Non-Zero)
-                if prev_qty == 0 and new_qty != 0:
-                    tracker['entry_time'] = t['timestamp']
-                # Case 2: Decrease Position (Closing)
-                elif (prev_qty > 0 and new_qty < prev_qty) or (prev_qty < 0 and new_qty > prev_qty):
-                    trade_entry_times[t['id']] = tracker['entry_time']
-                    if new_qty == 0: tracker['entry_time'] = None
-                # Case 3: Flip
-                elif (prev_qty > 0 and new_qty < 0) or (prev_qty < 0 and new_qty > 0):
-                    trade_entry_times[t['id']] = tracker['entry_time']
-                    tracker['entry_time'] = t['timestamp']
-                # Case 4: Increase (Maintain entry time)
-                elif (prev_qty > 0 and new_qty > prev_qty) or (prev_qty < 0 and new_qty < prev_qty):
-                     if tracker['entry_time'] is None: tracker['entry_time'] = t['timestamp']
-                
-                tracker['qty'] = new_qty
+                if sym not in symbol_state:
+                    symbol_state[sym] = {
+                        'qty': 0.0,
+                        'entry_time': None,
+                        'position_side': None,
+                        'entry_qty': 0.0,
+                        'entry_cost': 0.0,
+                        'exit_qty': 0.0,
+                        'exit_cost': 0.0,
+                        'realized_pnl': 0.0,
+                        'fee': 0.0,
+                        'last_exit_ts': None
+                    }
 
-            # --- Formatting ---
-            formatted_trades = []
-            
-            for t in trades:
-                # Extract Realized PnL
+                st = symbol_state[sym]
+                side = t['side']
+                amount = float(t.get('amount') or 0.0)
+                if amount <= 0:
+                    continue
+
+                qty_change = amount if side == 'buy' else -amount
+                prev_qty = st['qty']
+                new_qty = prev_qty + qty_change
+
                 realized_pnl = 0.0
                 if 'info' in t and 'realizedPnl' in t['info']:
-                    realized_pnl = float(t['info']['realizedPnl'])
-                elif 'realizedPnl' in t: 
-                    realized_pnl = float(t['realizedPnl'])
-                
-                # Base trade object
-                symbol_display = t.get('symbol', self.symbol).replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                
-                trade_obj = {
-                    'id': t['id'],
-                    'symbol': symbol_display, 
-                    'timestamp': t['timestamp'],
-                    'datetime': t['datetime'],
-                    'side': t['side'], 
-                    'price': t['price'],
-                    'amount': t['amount'],
-                    'cost': t['cost'],
-                    'fee': t['fee'],
-                    'realized_pnl': realized_pnl,
-                    'entry_price': t['price'], 
-                    'exit_price': None,
-                    'roi': 0.0,
-                    'entry_time': None
-                }
-                
-                # If this is a closing trade
-                if abs(realized_pnl) > 0:
-                    exit_price = t['price']
-                    qty = t['amount']
-                    
-                    if qty > 0:
-                        if t['side'] == 'sell':
-                            position_side = 'LONG'
-                            entry_price = exit_price - (realized_pnl / qty)
-                        else:
-                            position_side = 'SHORT'
-                            entry_price = exit_price + (realized_pnl / qty)
-                        
-                        if entry_price > 0:
-                            roi = (realized_pnl / (entry_price * qty)) * 100
-                        else:
-                            roi = 0.0
-                            
-                        trade_obj['entry_price'] = entry_price
-                        trade_obj['exit_price'] = exit_price
-                        trade_obj['position_side'] = position_side
-                        trade_obj['roi'] = roi
-                        
-                        # Populate Entry Time
-                        if t['id'] in trade_entry_times:
-                            trade_obj['entry_time'] = trade_entry_times[t['id']]
-                    else:
-                        logger.warning(f"Trade {t['id']} has realized PnL but qty is 0/None")
-                
-                formatted_trades.append(trade_obj)
-                
-            # Sort by time desc
-            formatted_trades.sort(key=lambda x: x['timestamp'], reverse=True)
-            
-            # Update Cache
-            if not symbols:
-                self.trade_history_cache = formatted_trades
-                self.last_history_update = current_time
-            
-            # --- Merge Closed Trades Logic ---
-            # Group by Symbol + Side + Approx Exit Time
-            merged_trades = []
-            if formatted_trades:
-                # Sort by timestamp desc for processing
-                # We need to process from newest to oldest or vice versa?
-                # Actually, if we want to merge "same order", they should be adjacent in time.
-                # formatted_trades is already sorted by timestamp desc (line 910)
-                
-                current_merge = formatted_trades[0]
-                
-                for i in range(1, len(formatted_trades)):
-                    next_trade = formatted_trades[i]
-                    
-                    # Merge conditions:
-                    # 1. Same Symbol
-                    # 2. Same Side
-                    # 3. Both are "closed" trades (have realized_pnl != 0) or both open?
-                    #    Actually, formatted_trades mixes opening and closing. 
-                    #    We only want to merge the closing records that are split (e.g. partial fills or fee records).
-                    #    Usually "Recent Trades (Closed)" implies realized_pnl != 0.
-                    
-                    is_closed_1 = abs(current_merge['realized_pnl']) > 0
-                    is_closed_2 = abs(next_trade['realized_pnl']) > 0
-                    
-                    time_diff = abs(current_merge['timestamp'] - next_trade['timestamp'])
-                    
-                    if (is_closed_1 and is_closed_2 and
-                        current_merge['symbol'] == next_trade['symbol'] and
-                        current_merge['side'] == next_trade['side'] and
-                        time_diff < 300000): # 5 minute tolerance for partial fills
-                        
-                        # Merge logic
-                        total_amt = current_merge['amount'] + next_trade['amount']
-                        
-                        # Weighted prices
-                        if total_amt > 0:
-                            avg_exit = (current_merge['exit_price'] * current_merge['amount'] + next_trade['exit_price'] * next_trade['amount']) / total_amt
-                            avg_entry = (current_merge['entry_price'] * current_merge['amount'] + next_trade['entry_price'] * next_trade['amount']) / total_amt
-                        else:
-                            avg_exit = current_merge['exit_price']
-                            avg_entry = current_merge['entry_price']
-                        
-                        current_merge['amount'] = total_amt
-                        current_merge['exit_price'] = avg_exit
-                        current_merge['entry_price'] = avg_entry
-                        current_merge['price'] = avg_exit
-                        
-                        current_merge['realized_pnl'] += next_trade['realized_pnl']
-                        
-                        fee1 = current_merge.get('fee', 0)
-                        if isinstance(fee1, dict): fee1 = float(fee1.get('cost', 0))
-                        fee2 = next_trade.get('fee', 0)
-                        if isinstance(fee2, dict): fee2 = float(fee2.get('cost', 0))
-                        
-                        current_merge['fee'] = fee1 + fee2
-                        current_merge['cost'] += next_trade['cost']
-                        
-                        # Recalc ROI
-                        if avg_entry * total_amt > 0:
-                            current_merge['roi'] = (current_merge['realized_pnl'] / (avg_entry * total_amt)) * 100
-                        
-                        # Keep earliest entry time
-                        if next_trade.get('entry_time') and (not current_merge.get('entry_time') or next_trade['entry_time'] < current_merge['entry_time']):
-                             current_merge['entry_time'] = next_trade['entry_time']
-                             
-                    else:
-                        merged_trades.append(current_merge)
-                        current_merge = next_trade
-                
-                merged_trades.append(current_merge)
-                formatted_trades = merged_trades
-                
-            # Populate self.position_entry_times for active positions
-            # Logic: If a symbol has a "tracker" with non-zero qty, use that entry time
-            self.position_entry_times = {}
-            for sym, tracker in symbol_tracker.items():
-                if abs(tracker['qty']) > 0 and tracker['entry_time']:
-                    self.position_entry_times[sym] = tracker['entry_time']
+                    try:
+                        realized_pnl = float(t['info']['realizedPnl'])
+                    except Exception:
+                        realized_pnl = 0.0
+                elif 'realizedPnl' in t:
+                    try:
+                        realized_pnl = float(t['realizedPnl'])
+                    except Exception:
+                        realized_pnl = 0.0
 
-            return formatted_trades
+                fee_cost = _fee_cost(t.get('fee'))
+
+                if prev_qty == 0 and new_qty != 0:
+                    st['entry_time'] = t['timestamp']
+                    st['position_side'] = 'LONG' if new_qty > 0 else 'SHORT'
+                    st['entry_qty'] = amount
+                    st['entry_cost'] = float(t.get('price') or 0.0) * amount
+                    st['exit_qty'] = 0.0
+                    st['exit_cost'] = 0.0
+                    st['realized_pnl'] = 0.0
+                    st['fee'] = fee_cost
+                    st['last_exit_ts'] = None
+                else:
+                    st['fee'] += fee_cost
+
+                    if prev_qty != 0 and (prev_qty > 0) == (new_qty > 0) and abs(new_qty) > abs(prev_qty):
+                        st['entry_qty'] += amount
+                        st['entry_cost'] += float(t.get('price') or 0.0) * amount
+
+                    elif prev_qty != 0 and abs(new_qty) < abs(prev_qty):
+                        st['exit_qty'] += amount
+                        st['exit_cost'] += float(t.get('price') or 0.0) * amount
+                        st['realized_pnl'] += realized_pnl
+                        st['last_exit_ts'] = t['timestamp']
+
+                    elif prev_qty != 0 and ((prev_qty > 0 and new_qty < 0) or (prev_qty < 0 and new_qty > 0)):
+                        st['exit_qty'] += amount
+                        st['exit_cost'] += float(t.get('price') or 0.0) * amount
+                        st['realized_pnl'] += realized_pnl
+                        st['last_exit_ts'] = t['timestamp']
+
+                        if st['entry_time'] and st['entry_qty'] > 0 and st['exit_qty'] > 0:
+                            entry_price = st['entry_cost'] / st['entry_qty']
+                            exit_price = st['exit_cost'] / st['exit_qty']
+                            roi = (st['realized_pnl'] / (entry_price * st['exit_qty']) * 100) if entry_price * st['exit_qty'] > 0 else 0.0
+                            exit_ts = st['last_exit_ts'] or t['timestamp']
+                            from datetime import datetime as _dt
+                            closed_roundtrips.append({
+                                'id': f"{sym}:{st['entry_time']}:{exit_ts}",
+                                'symbol': sym,
+                                'timestamp': exit_ts,
+                                'datetime': _dt.fromtimestamp(exit_ts / 1000).isoformat(),
+                                'side': 'sell' if st['position_side'] == 'LONG' else 'buy',
+                                'price': exit_price,
+                                'amount': st['exit_qty'],
+                                'cost': st['exit_cost'],
+                                'fee': st['fee'],
+                                'realized_pnl': st['realized_pnl'],
+                                'entry_price': entry_price,
+                                'exit_price': exit_price,
+                                'roi': roi,
+                                'entry_time': st['entry_time'],
+                                'position_side': st['position_side']
+                            })
+
+                        st['entry_time'] = t['timestamp']
+                        st['position_side'] = 'LONG' if new_qty > 0 else 'SHORT'
+                        st['entry_qty'] = amount
+                        st['entry_cost'] = float(t.get('price') or 0.0) * amount
+                        st['exit_qty'] = 0.0
+                        st['exit_cost'] = 0.0
+                        st['realized_pnl'] = 0.0
+                        st['fee'] = 0.0
+                        st['last_exit_ts'] = None
+
+                st['qty'] = new_qty
+
+                if st['qty'] == 0 and st['entry_time'] and st['exit_qty'] > 0:
+                    entry_price = (st['entry_cost'] / st['entry_qty']) if st['entry_qty'] > 0 else 0.0
+                    exit_price = (st['exit_cost'] / st['exit_qty']) if st['exit_qty'] > 0 else float(t.get('price') or 0.0)
+                    roi = (st['realized_pnl'] / (entry_price * st['exit_qty']) * 100) if entry_price * st['exit_qty'] > 0 else 0.0
+                    exit_ts = st['last_exit_ts'] or t['timestamp']
+                    from datetime import datetime as _dt
+                    closed_roundtrips.append({
+                        'id': f"{sym}:{st['entry_time']}:{exit_ts}",
+                        'symbol': sym,
+                        'timestamp': exit_ts,
+                        'datetime': _dt.fromtimestamp(exit_ts / 1000).isoformat(),
+                        'side': 'sell' if st['position_side'] == 'LONG' else 'buy',
+                        'price': exit_price,
+                        'amount': st['exit_qty'],
+                        'cost': st['exit_cost'],
+                        'fee': st['fee'],
+                        'realized_pnl': st['realized_pnl'],
+                        'entry_price': entry_price,
+                        'exit_price': exit_price,
+                        'roi': roi,
+                        'entry_time': st['entry_time'],
+                        'position_side': st['position_side']
+                    })
+
+                    st['entry_time'] = None
+                    st['position_side'] = None
+                    st['entry_qty'] = 0.0
+                    st['entry_cost'] = 0.0
+                    st['exit_qty'] = 0.0
+                    st['exit_cost'] = 0.0
+                    st['realized_pnl'] = 0.0
+                    st['fee'] = 0.0
+                    st['last_exit_ts'] = None
+
+            closed_roundtrips.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            if not symbols:
+                self.trade_history_cache = closed_roundtrips
+                self.last_history_update = current_time
+
+            self.position_entry_times = {}
+            for sym, st in symbol_state.items():
+                if abs(st.get('qty', 0.0)) > 0 and st.get('entry_time'):
+                    self.position_entry_times[sym] = st['entry_time']
+
+            return closed_roundtrips
         except Exception as e:
             logger.error(f"Error fetching trades: {e}")
             return []
 
-    def repair_orders(self, sl_pct: float = 0.03, tp_pct: float = 0.015):
+    def repair_orders(self, sl_pct: float = None, tp_pct: float = None):
         """
         Check all active positions and place SL/TP orders if missing.
-        Default SL: 3% from Entry.
-        Default TP: 1.5% from Entry (High Frequency).
+        Default SL: 2% from Entry (Strategy Document).
+        Default TP: 6% from Entry (Strategy Document).
         """
         if not self.exchange: return
+        
+        # Load from config if not provided
+        try:
+            cfg = self.config_manager.get_config()
+            if sl_pct is None:
+                sl_pct = float(cfg.get('sl_pct', 0.02))
+            if tp_pct is None:
+                tp_pct = float(cfg.get('tp_pct', 0.06))
+        except Exception as e:
+            logger.warning(f"repair_orders: Failed to load config, using defaults: {e}")
+            sl_pct = sl_pct or 0.02
+            tp_pct = tp_pct or 0.06
         
         try:
             # Optimized: Only check positions for the current symbol to save API weight
@@ -1607,11 +1703,6 @@ class RealTrader:
         total_pnl = 0.0
         total_fees = 0.0
         
-        # Filter for closed trades (realized pnl != 0)
-        # Note: Some exchanges/APIs might return realizedPnl even for open positions (funding fees),
-        # but usually for 'myTrades', realizedPnl is finalized pnl.
-        # We'll consider any trade with realized_pnl != 0 as a PnL event.
-        
         closed_trades_count = 0
         winning_trades_count = 0
         
@@ -1631,10 +1722,6 @@ class RealTrader:
             total_pnl += net_pnl
             total_fees += fee
             
-            # Win Rate Logic
-            # Only count "closing" trades or trades that have realized PnL
-            # Opening trades usually have 0 realized PnL (except maybe funding?)
-            # We strictly count trades where realized_pnl is non-zero OR where fees were paid (breakeven exit)
             if abs(pnl) > 0 or fee > 0:
                 closed_trades_count += 1
                 if net_pnl > 0:

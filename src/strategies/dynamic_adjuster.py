@@ -40,7 +40,7 @@ class DynamicConfigAdjuster:
             # "Escape Velocity" Mode
             base_config = {
                 "leverage": 10,
-                "max_portfolio_leverage": 20,
+                "max_portfolio_leverage": 10,
                 "risk_per_trade": 0.05,  # 5% risk per trade to compound fast
                 "ml_threshold": 0.60,    # Loose threshold for more frequency
                 "sl_pct": 0.02,          # Standard 2%
@@ -52,7 +52,7 @@ class DynamicConfigAdjuster:
             # Phase 2: Small Account (1k - 5k) -> Balanced Growth
             base_config = {
                 "leverage": 8,
-                "max_portfolio_leverage": 15,
+                "max_portfolio_leverage": 10,
                 "risk_per_trade": 0.03,  # 3% risk
                 "ml_threshold": 0.65,    # Balanced threshold
                 "sl_pct": 0.02,

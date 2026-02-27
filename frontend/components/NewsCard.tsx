@@ -71,7 +71,7 @@ export const NewsCard: React.FC = () => {
                     <div className="text-gray-500 dark:text-[#848E9C] text-center py-8 text-xs">No news available</div>
                 ) : (
                     news.map((item) => (
-                        <div key={item.id} className="group bg-gray-100 dark:bg-gray-200 dark:bg-[#2B3139]/20 hover:bg-gray-100 dark:bg-[#2B3139]/40 border border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50 rounded-lg p-3 transition-colors">
+                        <div key={item.id} className="group bg-gray-100 dark:bg-[#2B3139]/20 hover:bg-gray-200 dark:hover:bg-[#2B3139]/40 border border-gray-200 dark:border-[#2B3139] rounded-lg p-3 transition-colors">
                             <a 
                                 href={item.url} 
                                 target="_blank" 

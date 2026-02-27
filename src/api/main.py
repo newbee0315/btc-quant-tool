@@ -108,14 +108,14 @@ paper_trader = None
 class StrategyConfig(BaseModel):
     ema_period: int = 200
     rsi_period: int = 14
-    ml_threshold: float = 0.75
-    leverage: int = Field(1, ge=1, le=20)
-    max_portfolio_leverage: int = Field(10, ge=1, le=20)
+    ml_threshold: float = 0.60
+    leverage: int = Field(1, ge=1, le=10)
+    max_portfolio_leverage: int = Field(10, ge=1, le=10)
 
 class TraderConfig(BaseModel):
     mode: str = "paper"  # "paper" or "real"
-    sl_pct: float = 0.03
-    tp_pct: float = 0.025
+    sl_pct: float = 0.02
+    tp_pct: float = 0.06
     amount_usdt: float = 20.0
     api_key: Optional[str] = None
     api_secret: Optional[str] = None

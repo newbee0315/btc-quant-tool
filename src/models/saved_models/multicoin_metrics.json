@@ -1,0 +1,254 @@
+{
+    "XRPUSDT": {
+        "10m": {
+            "accuracy": 0.5961,
+            "precision": 0.3774,
+            "recall": 0.44,
+            "f1": 0.4063,
+            "auc": 0.5865,
+            "model_path": "xgb_XRPUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.4352,
+            "precision": 0.3921,
+            "recall": 0.8936,
+            "f1": 0.5451,
+            "auc": 0.5544,
+            "model_path": "xgb_XRPUSDT_30m.joblib"
+        }
+    },
+    "OPUSDT": {
+        "10m": {
+            "accuracy": 0.5008,
+            "precision": 0.3698,
+            "recall": 0.545,
+            "f1": 0.4407,
+            "auc": 0.5186,
+            "model_path": "xgb_OPUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.4366,
+            "precision": 0.4107,
+            "recall": 0.9013,
+            "f1": 0.5643,
+            "auc": 0.5247,
+            "model_path": "xgb_OPUSDT_30m.joblib"
+        }
+    },
+    "BNBUSDT": {
+        "10m": {
+            "accuracy": 0.6551,
+            "precision": 0.3564,
+            "recall": 0.352,
+            "f1": 0.3542,
+            "auc": 0.6059,
+            "model_path": "xgb_BNBUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.4996,
+            "precision": 0.3861,
+            "recall": 0.6705,
+            "f1": 0.4901,
+            "auc": 0.5578,
+            "model_path": "xgb_BNBUSDT_30m.joblib"
+        }
+    },
+    "ADAUSDT": {
+        "10m": {
+            "accuracy": 0.5771,
+            "precision": 0.373,
+            "recall": 0.3734,
+            "f1": 0.3732,
+            "auc": 0.5464,
+            "model_path": "xgb_ADAUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.49,
+            "precision": 0.4163,
+            "recall": 0.7091,
+            "f1": 0.5246,
+            "auc": 0.5466,
+            "model_path": "xgb_ADAUSDT_30m.joblib"
+        }
+    },
+    "TRXUSDT": {
+        "10m": {
+            "accuracy": 0.8776,
+            "precision": 0.2171,
+            "recall": 0.0221,
+            "f1": 0.0401,
+            "auc": 0.6074,
+            "model_path": "xgb_TRXUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.7624,
+            "precision": 0.3908,
+            "recall": 0.0166,
+            "f1": 0.0319,
+            "auc": 0.5881,
+            "model_path": "xgb_TRXUSDT_30m.joblib"
+        }
+    },
+    "ETHUSDT": {
+        "10m": {
+            "accuracy": 0.5991,
+            "precision": 0.3852,
+            "recall": 0.5276,
+            "f1": 0.4453,
+            "auc": 0.614,
+            "model_path": "xgb_ETHUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5065,
+            "precision": 0.4137,
+            "recall": 0.7197,
+            "f1": 0.5254,
+            "auc": 0.5709,
+            "model_path": "xgb_ETHUSDT_30m.joblib"
+        }
+    },
+    "PEPEUSDT": {
+        "10m": {
+            "accuracy": 0.5954,
+            "precision": 0.4045,
+            "recall": 0.2845,
+            "f1": 0.3341,
+            "auc": 0.5438,
+            "model_path": "xgb_PEPEUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5601,
+            "precision": 0.4374,
+            "recall": 0.2828,
+            "f1": 0.3435,
+            "auc": 0.5408,
+            "model_path": "xgb_PEPEUSDT_30m.joblib"
+        }
+    },
+    "BTCUSDT": {
+        "10m": {
+            "accuracy": 0.6232,
+            "precision": 0.3477,
+            "recall": 0.507,
+            "f1": 0.4125,
+            "auc": 0.6195,
+            "model_path": "xgb_BTCUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5167,
+            "precision": 0.392,
+            "recall": 0.7336,
+            "f1": 0.511,
+            "auc": 0.5984,
+            "model_path": "xgb_BTCUSDT_30m.joblib"
+        }
+    },
+    "DOGEUSDT": {
+        "10m": {
+            "accuracy": 0.6515,
+            "precision": 0.4147,
+            "recall": 0.2636,
+            "f1": 0.3223,
+            "auc": 0.6022,
+            "model_path": "xgb_DOGEUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.591,
+            "precision": 0.4469,
+            "recall": 0.3151,
+            "f1": 0.3696,
+            "auc": 0.5733,
+            "model_path": "xgb_DOGEUSDT_30m.joblib"
+        }
+    },
+    "AVAXUSDT": {
+        "10m": {
+            "accuracy": 0.6612,
+            "precision": 0.3548,
+            "recall": 0.0975,
+            "f1": 0.153,
+            "auc": 0.559,
+            "model_path": "xgb_AVAXUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5376,
+            "precision": 0.4199,
+            "recall": 0.506,
+            "f1": 0.4589,
+            "auc": 0.5394,
+            "model_path": "xgb_AVAXUSDT_30m.joblib"
+        }
+    },
+    "SOLUSDT": {
+        "10m": {
+            "accuracy": 0.6766,
+            "precision": 0.5449,
+            "recall": 0.0053,
+            "f1": 0.0105,
+            "auc": 0.599,
+            "model_path": "xgb_SOLUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5335,
+            "precision": 0.4393,
+            "recall": 0.6583,
+            "f1": 0.527,
+            "auc": 0.569,
+            "model_path": "xgb_SOLUSDT_30m.joblib"
+        }
+    },
+    "BCHUSDT": {
+        "10m": {
+            "accuracy": 0.6935,
+            "precision": 0.4113,
+            "recall": 0.0625,
+            "f1": 0.1085,
+            "auc": 0.5747,
+            "model_path": "xgb_BCHUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.6293,
+            "precision": 0.4775,
+            "recall": 0.0132,
+            "f1": 0.0257,
+            "auc": 0.5689,
+            "model_path": "xgb_BCHUSDT_30m.joblib"
+        }
+    },
+    "LINKUSDT": {
+        "10m": {
+            "accuracy": 0.5986,
+            "precision": 0.3805,
+            "recall": 0.3805,
+            "f1": 0.3805,
+            "auc": 0.5697,
+            "model_path": "xgb_LINKUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.4549,
+            "precision": 0.4021,
+            "recall": 0.8193,
+            "f1": 0.5394,
+            "auc": 0.5593,
+            "model_path": "xgb_LINKUSDT_30m.joblib"
+        }
+    },
+    "LDOUSDT": {
+        "10m": {
+            "accuracy": 0.6671,
+            "precision": 0.434,
+            "recall": 0.0312,
+            "f1": 0.0582,
+            "auc": 0.5577,
+            "model_path": "xgb_LDOUSDT_10m.joblib"
+        },
+        "30m": {
+            "accuracy": 0.5783,
+            "precision": 0.4319,
+            "recall": 0.2665,
+            "f1": 0.3296,
+            "auc": 0.5414,
+            "model_path": "xgb_LDOUSDT_30m.joblib"
+        }
+    }
+}

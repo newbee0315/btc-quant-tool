@@ -590,10 +590,10 @@ class TrendMLStrategy(BaseStrategy):
         # 4. Multi-Mode Risk Management (Risk-Based Position Sizing)
         sl_price = 0.0
         tp_price = 0.0
-        # Dynamic Leverage Calculation
-        suggested_leverage = 10.0
+        # Dynamic Leverage Calculation (Respect global cap 10x; PM caps to 8x on high confidence)
+        suggested_leverage = 5.0
         if market_mode == 'high' or ml_prob > 0.8:
-             suggested_leverage = 20.0
+             suggested_leverage = 8.0
              
         position_size = 0.0
         
@@ -640,6 +640,20 @@ class TrendMLStrategy(BaseStrategy):
             reason.append(f"模式:{market_mode}")
             reason.append(f"杠杆:{int(suggested_leverage)}x")
 
+        entry_style = "smart"
+        grid_levels = 0
+        grid_spacing_pct = 0.0
+        grid_wait_s = 0
+        try:
+            if signal != 0 and market_mode == 'low' and close_price > 0:
+                entry_style = "grid"
+                grid_levels = 3
+                raw_spacing = float(atr / close_price) * 0.5 if atr and close_price else 0.0015
+                grid_spacing_pct = max(0.001, min(0.003, raw_spacing))
+                grid_wait_s = 6
+        except Exception:
+            pass
+
         # Log execution
         self.log_execution(
             timestamp=datetime.now().isoformat(),
@@ -673,7 +687,11 @@ class TrendMLStrategy(BaseStrategy):
                 "tp_price": tp_price,
                 "leverage": int(suggested_leverage),
                 "position_size": position_size,
-                "market_mode": market_mode
+                "market_mode": market_mode,
+                "entry_style": entry_style,
+                "grid_levels": grid_levels,
+                "grid_spacing_pct": grid_spacing_pct,
+                "grid_wait_s": grid_wait_s
             }
         }
 

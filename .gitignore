@@ -54,7 +54,6 @@ build/
 trader_config.json
 data/
 src/data/*.csv
-src/models/saved_models/
 backend_logs.txt
 frontend_logs.txt
 *.tar.gz

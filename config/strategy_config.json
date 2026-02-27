@@ -3,7 +3,7 @@
     "rsi_period": 14,
     "ema_period": 200,
     "leverage": 10,
-    "max_portfolio_leverage": 20,
+    "max_portfolio_leverage": 10,
     "sl_pct": 0.02,
     "tp_pct": 0.06,
     "trailing_stop_trigger_pct": 0.01,

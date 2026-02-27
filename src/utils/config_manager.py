@@ -19,12 +19,12 @@ class ConfigManager:
         self._ensure_dir()
         if not os.path.exists(self.config_path):
             default_config = {
-                "ml_threshold": 0.65,
+                "ml_threshold": 0.60,
                 "rsi_period": 14,
                 "ema_period": 200,
                 "leverage": 10,
-                "sl_pct": 0.03,
-                "tp_pct": 0.015,
+                "sl_pct": 0.02,
+                "tp_pct": 0.06,
                 "trailing_stop_trigger_pct": 0.01,
                 "trailing_stop_lock_pct": 0.02,
                 "risk_per_trade": 0.02,
