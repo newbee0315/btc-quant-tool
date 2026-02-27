@@ -1403,8 +1403,11 @@ class RealTrader:
                         st['last_exit_ts'] = t['timestamp']
 
                     elif prev_qty != 0 and ((prev_qty > 0 and new_qty < 0) or (prev_qty < 0 and new_qty > 0)):
-                        st['exit_qty'] += amount
-                        st['exit_cost'] += float(t.get('price') or 0.0) * amount
+                        closing_amount = min(amount, abs(prev_qty))
+                        opening_amount = max(0.0, amount - closing_amount)
+
+                        st['exit_qty'] += closing_amount
+                        st['exit_cost'] += float(t.get('price') or 0.0) * closing_amount
                         st['realized_pnl'] += realized_pnl
                         st['last_exit_ts'] = t['timestamp']
 
@@ -1434,8 +1437,8 @@ class RealTrader:
 
                         st['entry_time'] = t['timestamp']
                         st['position_side'] = 'LONG' if new_qty > 0 else 'SHORT'
-                        st['entry_qty'] = amount
-                        st['entry_cost'] = float(t.get('price') or 0.0) * amount
+                        st['entry_qty'] = opening_amount
+                        st['entry_cost'] = float(t.get('price') or 0.0) * opening_amount
                         st['exit_qty'] = 0.0
                         st['exit_cost'] = 0.0
                         st['realized_pnl'] = 0.0

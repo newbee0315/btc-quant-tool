@@ -14,6 +14,8 @@ class FeishuBot:
         self.webhook_url = webhook_url or os.getenv("FEISHU_WEBHOOK_URL")
         self.persistence_file = persistence_file
         self.max_history = 100
+        self.session = requests.Session()
+        self.session.trust_env = False
         
         # Default stats
         self.stats = {
@@ -156,19 +158,14 @@ class FeishuBot:
 
         headers = {
             'Content-Type': 'application/json',
-            'Connection': 'close',  # Prevent keep-alive issues
             'User-Agent': 'curl/7.64.1' # Mimic curl to avoid potential blocking
         }
-        
-        # Use Session for better connection handling
-        session = requests.Session()
-        session.trust_env = False # Ignore proxy env vars just in case
         
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 logger.info(f"Sending to Feishu (Attempt {attempt+1}/{max_retries}): {self.webhook_url[:10]}... Payload: {json.dumps(data)}")
-                response = session.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=15)
+                response = self.session.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=15)
                 logger.info(f"Feishu Response: {response.status_code} - {response.text}")
                 response.raise_for_status()
                 self._log_message(msg_type, log_content, True)
