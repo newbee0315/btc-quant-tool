@@ -238,31 +238,31 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-4">
-            <div className="bg-[#161A25] border border-[#2B3139] rounded-xl w-full max-w-[900px] h-[95vh] md:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="bg-[#161A25] border border-gray-200 dark:border-[#2B3139] rounded-xl w-full max-w-[900px] h-[95vh] md:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
                 {/* Header */}
-                <div className="px-4 py-3 md:px-6 md:py-4 border-b border-[#2B3139] flex justify-between items-center bg-[#1E2329] shrink-0">
+                <div className="px-4 py-3 md:px-6 md:py-4 border-b border-gray-200 dark:border-[#2B3139] flex justify-between items-center bg-white dark:bg-[#1E2329] shrink-0">
                     <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
-                        <h2 className="text-lg font-bold flex items-center gap-2 text-[#EAECEF]">
-                            <TrendingUp className="w-5 h-5 text-[#F0B90B]" />
+                        <h2 className="text-lg font-bold flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
+                            <TrendingUp className="w-5 h-5 text-yellow-600 dark:text-[#F0B90B]" />
                             <span className="hidden sm:inline">策略回测系统</span>
                             <span className="sm:hidden">回测系统</span>
                         </h2>
                         <div className="flex bg-[#161A25] rounded p-1 self-start md:self-auto">
                             <button 
                                 onClick={() => setActiveTab('backtest')}
-                                className={`px-3 py-1 md:px-4 md:py-1.5 rounded text-xs md:text-sm font-medium transition-colors ${activeTab === 'backtest' ? 'bg-[#2B3139] text-[#EAECEF]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                className={`px-3 py-1 md:px-4 md:py-1.5 rounded text-xs md:text-sm font-medium transition-colors ${activeTab === 'backtest' ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-900 dark:text-[#EAECEF]' : 'text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF]'}`}
                             >
                                 回测
                             </button>
                             <button 
                                 onClick={() => setActiveTab('sensitivity')}
-                                className={`px-3 py-1 md:px-4 md:py-1.5 rounded text-xs md:text-sm font-medium transition-colors ${activeTab === 'sensitivity' ? 'bg-[#2B3139] text-[#EAECEF]' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                className={`px-3 py-1 md:px-4 md:py-1.5 rounded text-xs md:text-sm font-medium transition-colors ${activeTab === 'sensitivity' ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-900 dark:text-[#EAECEF]' : 'text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF]'}`}
                             >
                                 敏感度
                             </button>
                         </div>
                     </div>
-                    <button onClick={onClose} className="text-[#848E9C] hover:text-[#EAECEF]">
+                    <button onClick={onClose} className="text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF]">
                         <XCircle className="w-6 h-6" />
                     </button>
                 </div>
@@ -272,33 +272,33 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                     <div className="w-full md:w-64 shrink-0 space-y-4">
                         <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
                             <div className="space-y-3">
-                                <label className="block text-sm text-[#848E9C]">交易对 (Symbol)</label>
+                                <label className="block text-sm text-gray-500 dark:text-[#848E9C]">交易对 (Symbol)</label>
                                 <input 
                                     type="text" 
                                     value={config.symbol}
                                     onChange={(e) => setConfig({...config, symbol: e.target.value.toUpperCase()})}
-                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B] uppercase"
+                                    className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B] uppercase"
                                 />
                             </div>
 
                             <div className="space-y-3">
-                                <label className="block text-sm text-[#848E9C]">回测天数 (Days)</label>
+                                <label className="block text-sm text-gray-500 dark:text-[#848E9C]">回测天数 (Days)</label>
                                 <input 
                                     type="number" 
                                     min="1"
                                     max="365"
                                     value={config.days}
                                     onChange={(e) => setConfig({...config, days: parseInt(e.target.value)})}
-                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                    className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                 />
                             </div>
 
                             <div className="space-y-3">
-                                <label className="block text-sm text-[#848E9C]">预测周期 (分钟)</label>
+                                <label className="block text-sm text-gray-500 dark:text-[#848E9C]">预测周期 (分钟)</label>
                                 <select 
                                     value={config.horizon}
                                     onChange={(e) => setConfig({...config, horizon: parseInt(e.target.value)})}
-                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                    className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                 >
                                     <option value={10}>10 分钟 (10m)</option>
                                     <option value={30}>30 分钟 (30m)</option>
@@ -307,7 +307,7 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                             </div>
 
                             <div className="space-y-3">
-                                <label className="block text-sm text-[#848E9C]">置信度阈值 (0.5-1.0)</label>
+                                <label className="block text-sm text-gray-500 dark:text-[#848E9C]">置信度阈值 (0.5-1.0)</label>
                                 <input 
                                     type="number" 
                                     step="0.05"
@@ -315,7 +315,7 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                     max="1.0"
                                     value={config.threshold}
                                     onChange={(e) => setConfig({...config, threshold: parseFloat(e.target.value)})}
-                                    className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                    className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                 />
                             </div>
                         </div>
@@ -323,33 +323,33 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                         {activeTab === 'backtest' && (
                             <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
                                 <div className="space-y-3">
-                                    <label className="block text-sm text-[#848E9C]">初始资金 (USDT)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C]">初始资金 (USDT)</label>
                                     <input 
                                         type="number" 
                                         value={config.initial_capital}
                                         onChange={(e) => setConfig({...config, initial_capital: parseFloat(e.target.value)})}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="block text-sm text-[#848E9C]">止损比例 (%)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C]">止损比例 (%)</label>
                                     <input 
                                         type="number" 
                                         step="0.005"
                                         value={config.sl}
                                         onChange={(e) => setConfig({...config, sl: parseFloat(e.target.value)})}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                     />
                                 </div>
 
                                 <div className="space-y-3">
-                                    <label className="block text-sm text-[#848E9C]">止盈比例 (%)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C]">止盈比例 (%)</label>
                                     <input 
                                         type="number" 
                                         step="0.005"
                                         value={config.tp}
                                         onChange={(e) => setConfig({...config, tp: parseFloat(e.target.value)})}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded px-3 py-2 text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded px-3 py-2 text-gray-900 dark:text-[#EAECEF] focus:outline-none focus:border-[#F0B90B]"
                                     />
                                 </div>
                             </div>
@@ -375,13 +375,13 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                             <>
                                 {/* Date Range Info */}
                                 {result && result.start_date && (
-                                    <div className="bg-[#1E2329] p-3 rounded-xl border border-[#2B3139] flex justify-between items-center px-4">
-                                        <div className="text-sm text-[#848E9C]">
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 rounded-xl border border-gray-200 dark:border-[#2B3139] flex justify-between items-center px-4">
+                                        <div className="text-sm text-gray-500 dark:text-[#848E9C]">
                                             回测时间段 (Backtest Period)
                                         </div>
-                                        <div className="text-sm font-medium text-[#EAECEF]">
-                                            {new Date(result.start_date!).toLocaleString()} <span className="text-[#848E9C] mx-2">→</span> {new Date(result.end_date!).toLocaleString()} 
-                                            <span className="ml-3 bg-[#2B3139] px-2 py-0.5 rounded text-[#F0B90B] text-xs">
+                                        <div className="text-sm font-medium text-gray-900 dark:text-[#EAECEF]">
+                                            {new Date(result.start_date!).toLocaleString()} <span className="text-gray-500 dark:text-[#848E9C] mx-2">→</span> {new Date(result.end_date!).toLocaleString()} 
+                                            <span className="ml-3 bg-gray-100 dark:bg-[#2B3139] px-2 py-0.5 rounded text-yellow-600 dark:text-[#F0B90B] text-xs">
                                                 {result.duration_days} 天 (Days)
                                             </span>
                                         </div>
@@ -390,59 +390,59 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
 
                                 {/* Stats Cards */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-4">
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">初始资金 (Initial Cap)</p>
-                                        <p className="text-sm md:text-xl font-bold text-[#EAECEF]">
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">初始资金 (Initial Cap)</p>
+                                        <p className="text-sm md:text-xl font-bold text-gray-900 dark:text-[#EAECEF]">
                                             {result ? `$${Math.round(result.initial_capital).toLocaleString()}` : '$10,000'}
                                         </p>
                                     </div>
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">最终资金 (Final Cap)</p>
-                                        <p className={`text-sm md:text-xl font-bold ${result && result.total_return_pct >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">最终资金 (Final Cap)</p>
+                                        <p className={`text-sm md:text-xl font-bold ${result && result.total_return_pct >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]'}`}>
                                             {result ? `$${Math.round(result.final_capital).toLocaleString()}` : '---'}
                                         </p>
                                     </div>
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">总收益率 (Return)</p>
-                                        <p className={`text-sm md:text-xl font-bold ${result && result.total_return_pct >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">总收益率 (Return)</p>
+                                        <p className={`text-sm md:text-xl font-bold ${result && result.total_return_pct >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]'}`}>
                                             {result ? `${result.total_return_pct.toFixed(2)}%` : '---'}
                                         </p>
                                     </div>
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">交易手续费 (Fees)</p>
-                                        <p className="text-sm md:text-xl font-bold text-[#F6465D]">
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">交易手续费 (Fees)</p>
+                                        <p className="text-sm md:text-xl font-bold text-red-600 dark:text-[#F6465D]">
                                             {result ? `-$${Math.round(result.total_fees).toLocaleString()}` : '---'}
                                         </p>
                                     </div>
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">胜率 (Win Rate)</p>
-                                        <p className="text-sm md:text-xl font-bold text-[#EAECEF]">
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">胜率 (Win Rate)</p>
+                                        <p className="text-sm md:text-xl font-bold text-gray-900 dark:text-[#EAECEF]">
                                             {result ? `${(result.win_rate * 100).toFixed(1)}%` : '---'}
                                         </p>
                                     </div>
-                                    <div className="bg-[#1E2329] p-3 md:p-4 rounded-xl border border-[#2B3139]">
-                                        <p className="text-[#848E9C] text-[10px] md:text-xs">交易次数 (Trades)</p>
-                                        <p className="text-sm md:text-xl font-bold text-[#EAECEF]">
+                                    <div className="bg-white dark:bg-[#1E2329] p-3 md:p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                        <p className="text-gray-500 dark:text-[#848E9C] text-[10px] md:text-xs">交易次数 (Trades)</p>
+                                        <p className="text-sm md:text-xl font-bold text-gray-900 dark:text-[#EAECEF]">
                                             {result ? result.total_trades : '---'}
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Chart */}
-                                <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139]">
-                                    <h3 className="text-sm font-semibold text-[#848E9C] mb-4">资金权益曲线 (Equity Curve)</h3>
+                                <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
+                                    <h3 className="text-sm font-semibold text-gray-500 dark:text-[#848E9C] mb-4">资金权益曲线 (Equity Curve)</h3>
                                     <div ref={chartContainerRef} className="w-full h-[250px] md:h-[300px]" />
                                 </div>
 
                                 {/* Threshold Optimization Chart */}
-                                <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139]">
+                                <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
                                     <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-sm font-semibold text-[#848E9C]">阈值敏感度分析 (Threshold Analysis)</h3>
+                                        <h3 className="text-sm font-semibold text-gray-500 dark:text-[#848E9C]">阈值敏感度分析 (Threshold Analysis)</h3>
                                         <button
                                             onClick={runOptimization}
                                             disabled={optLoading}
                                             className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
-                                                optLoading ? 'bg-[#2B3139] text-[#848E9C] cursor-not-allowed' : 'bg-[#F0B90B] text-black hover:bg-[#FCD535]'
+                                                optLoading ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C] cursor-not-allowed' : 'bg-[#F0B90B] text-black hover:bg-[#FCD535]'
                                             }`}
                                         >
                                             {optLoading ? '分析中...' : '开始分析'}
@@ -482,7 +482,7 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                             </ResponsiveContainer>
                                         </div>
                                     ) : (
-                                        <div className="h-[200px] flex items-center justify-center text-[#848E9C] text-sm">
+                                        <div className="h-[200px] flex items-center justify-center text-gray-500 dark:text-[#848E9C] text-sm">
                                             点击“开始分析”查看阈值对收益的影响
                                         </div>
                                     )}
@@ -490,12 +490,12 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                             </>
                         ) : (
                             /* Sensitivity Analysis Heatmap */
-                            <div className="bg-[#1E2329] p-4 md:p-6 rounded-xl border border-[#2B3139] h-full overflow-hidden flex flex-col">
-                                <h3 className="text-lg font-bold text-[#EAECEF] mb-4 md:mb-6 shrink-0">止损止盈敏感度分析 (SL/TP Sensitivity)</h3>
+                            <div className="bg-white dark:bg-[#1E2329] p-4 md:p-6 rounded-xl border border-gray-200 dark:border-[#2B3139] h-full overflow-hidden flex flex-col">
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-[#EAECEF] mb-4 md:mb-6 shrink-0">止损止盈敏感度分析 (SL/TP Sensitivity)</h3>
                                 
                                 {sensitivityResults.length > 0 ? (
                                     <div className="flex-1 overflow-auto">
-                                        <div className="mb-2 text-xs text-[#848E9C] flex flex-wrap items-center gap-2 md:gap-4 sticky left-0">
+                                        <div className="mb-2 text-xs text-gray-500 dark:text-[#848E9C] flex flex-wrap items-center gap-2 md:gap-4 sticky left-0">
                                             <span className="flex items-center gap-1"><div className="w-3 h-3 bg-[#0ECB81] opacity-80"></div> 正收益</span>
                                             <span className="flex items-center gap-1"><div className="w-3 h-3 bg-[#F6465D] opacity-80"></div> 负收益</span>
                                             <span className="md:ml-auto w-full md:w-auto mt-1 md:mt-0">纵轴: 止损 (SL) | 横轴: 止盈 (TP)</span>
@@ -503,15 +503,15 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                         <table className="w-full border-collapse text-center">
                                             <thead>
                                                 <tr>
-                                                    <th className="p-3 text-sm font-bold text-[#848E9C] bg-[#161A25] border border-[#2B3139] sticky left-0 z-10 min-w-[100px]">
+                                                    <th className="p-3 text-sm font-bold text-gray-500 dark:text-[#848E9C] bg-[#161A25] border border-gray-200 dark:border-[#2B3139] sticky left-0 z-10 min-w-[100px]">
                                                         <div className="flex flex-col items-center justify-center leading-tight">
                                                             <span>止盈 (TP) →</span>
-                                                            <span className="w-full h-px bg-[#2B3139] my-1 transform -rotate-12"></span>
+                                                            <span className="w-full h-px bg-gray-100 dark:bg-[#2B3139] my-1 transform -rotate-12"></span>
                                                             <span>↓ 止损 (SL)</span>
                                                         </div>
                                                     </th>
                                                     {uniqueTPs.map(tp => (
-                                                        <th key={tp} className="p-3 text-sm font-bold text-[#EAECEF] bg-[#161A25] border border-[#2B3139]">
+                                                        <th key={tp} className="p-3 text-sm font-bold text-gray-900 dark:text-[#EAECEF] bg-[#161A25] border border-gray-200 dark:border-[#2B3139]">
                                                             {(tp * 100).toFixed(1)}%
                                                         </th>
                                                     ))}
@@ -520,7 +520,7 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                             <tbody>
                                                 {uniqueSLs.map(sl => (
                                                     <tr key={sl}>
-                                                        <td className="p-3 text-sm font-bold text-[#EAECEF] bg-[#161A25] border border-[#2B3139] sticky left-0 z-10">
+                                                        <td className="p-3 text-sm font-bold text-gray-900 dark:text-[#EAECEF] bg-[#161A25] border border-gray-200 dark:border-[#2B3139] sticky left-0 z-10">
                                                             {(sl * 100).toFixed(1)}%
                                                         </td>
                                                         {uniqueTPs.map(tp => {
@@ -540,7 +540,7 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                                             return (
                                                                 <td 
                                                                     key={`${sl}-${tp}`} 
-                                                                    className="p-3 text-center border border-[#2B3139] transition-colors hover:brightness-110 cursor-pointer relative group"
+                                                                    className="p-3 text-center border border-gray-200 dark:border-[#2B3139] transition-colors hover:brightness-110 cursor-pointer relative group"
                                                                     style={{ backgroundColor: bgColor }}
                                                                 >
                                                                     <span className="text-sm font-medium text-white shadow-sm block">
@@ -548,21 +548,21 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                                                     </span>
                                                                     
                                                                     {/* Custom Tooltip */}
-                                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-[#1E2329] border border-[#474D57] rounded-lg shadow-xl p-3 z-50 hidden group-hover:block pointer-events-none">
-                                                                        <div className="text-xs text-[#848E9C] mb-1 text-left">
+                                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-white dark:bg-[#1E2329] border border-gray-300 dark:border-[#474D57] rounded-lg shadow-xl p-3 z-50 hidden group-hover:block pointer-events-none">
+                                                                        <div className="text-xs text-gray-500 dark:text-[#848E9C] mb-1 text-left">
                                                                             SL: {(sl * 100).toFixed(1)}% | TP: {(tp * 100).toFixed(1)}%
                                                                         </div>
                                                                         <div className="flex justify-between text-xs mb-1">
-                                                                            <span className="text-[#848E9C]">胜率 (Win Rate):</span>
-                                                                            <span className="text-[#EAECEF]">{((res?.win_rate || 0) * 100).toFixed(1)}%</span>
+                                                                            <span className="text-gray-500 dark:text-[#848E9C]">胜率 (Win Rate):</span>
+                                                                            <span className="text-gray-900 dark:text-[#EAECEF]">{((res?.win_rate || 0) * 100).toFixed(1)}%</span>
                                                                         </div>
                                                                         <div className="flex justify-between text-xs mb-1">
-                                                                            <span className="text-[#848E9C]">交易次数 (Trades):</span>
-                                                                            <span className="text-[#EAECEF]">{res?.total_trades || 0}</span>
+                                                                            <span className="text-gray-500 dark:text-[#848E9C]">交易次数 (Trades):</span>
+                                                                            <span className="text-gray-900 dark:text-[#EAECEF]">{res?.total_trades || 0}</span>
                                                                         </div>
-                                                                        <div className="flex justify-between text-xs font-bold border-t border-[#2B3139] pt-1 mt-1">
-                                                                            <span className="text-[#848E9C]">收益率:</span>
-                                                                            <span className={returnPct >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>
+                                                                        <div className="flex justify-between text-xs font-bold border-t border-gray-200 dark:border-[#2B3139] pt-1 mt-1">
+                                                                            <span className="text-gray-500 dark:text-[#848E9C]">收益率:</span>
+                                                                            <span className={returnPct >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]'}>
                                                                                 {returnPct.toFixed(2)}%
                                                                             </span>
                                                                         </div>
@@ -576,8 +576,8 @@ export const BacktestPanel: React.FC<{ onClose: () => void, onBacktestResult?: (
                                         </table>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center h-[400px] text-[#848E9C]">
-                                        <div className="mb-4 bg-[#2B3139] p-4 rounded-full">
+                                    <div className="flex flex-col items-center justify-center h-[400px] text-gray-500 dark:text-[#848E9C]">
+                                        <div className="mb-4 bg-gray-100 dark:bg-[#2B3139] p-4 rounded-full">
                                             <TrendingUp className="w-8 h-8 opacity-50" />
                                         </div>
                                         <p className="text-sm">点击左侧“运行分析”开始网格搜索最优止损止盈参数</p>

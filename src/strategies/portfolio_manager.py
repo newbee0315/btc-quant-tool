@@ -17,6 +17,7 @@ from src.models.predictor import PricePredictor
 from src.strategies.trend_ml_strategy import TrendMLStrategy
 from src.utils.config_manager import config_manager
 from src.risk.correlation_manager import CorrelationManager
+from src.strategies.dynamic_adjuster import dynamic_adjuster
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,9 @@ class PortfolioManager:
         # Default to Top 30
         if active_symbols is None:
             self.active_symbols = [
-                'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'AVAXUSDT',
-                'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'LINKUSDT',
-                'LTCUSDT', 'DOTUSDT', 'BCHUSDT', 'SHIBUSDT', 'MATICUSDT',
-                'NEARUSDT', 'APTUSDT', 'FILUSDT', 'ATOMUSDT', 'ARBUSDT',
-                'OPUSDT', 'ETCUSDT', 'ICPUSDT', 'RNDRUSDT', 'INJUSDT',
-                'STXUSDT', 'LDOUSDT', 'VETUSDT', 'XLMUSDT', 'PEPEUSDT'
+                'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'DOGEUSDT',
+                'XRPUSDT', 'PEPEUSDT', 'AVAXUSDT', 'LINKUSDT', 'ADAUSDT',
+                'TRXUSDT', 'LDOUSDT', 'BCHUSDT', 'OPUSDT'
             ]
         else:
             self.active_symbols = active_symbols
@@ -189,6 +187,129 @@ class PortfolioManager:
             logger.error(f"Leaderboard scan failed: {e}")
             return []
 
+    def check_leverage_limits(self, current_positions, total_equity, confidence=0.0):
+        """
+        Check if adding a new position violates leverage/size limits.
+        
+        Rules:
+        1. Total Leverage Limit:
+           - Base: 5x
+           - High Confidence (>0.8): 8x
+        2. Single Position Limit:
+           - Max 30% of Total Equity (Handled in sizing)
+           
+        Returns: (bool, str) -> (Allowed?, Reason)
+        """
+        if total_equity <= 0:
+            return False, "Invalid Equity <= 0"
+            
+        # 1. Calculate Current Total Leverage
+        total_notional = 0.0
+        for pos in current_positions.values():
+            # Use absolute value of notional (position size in USDT)
+            val = float(pos.get('notional', 0.0))
+            if val == 0.0:
+                 val = float(pos.get('position_value_usdt', 0.0))
+            total_notional += abs(val)
+            
+        current_leverage = total_notional / total_equity
+        
+        # Determine Max Allowed Leverage based on confidence
+        max_leverage = 5.0
+        if confidence > 0.8:
+            max_leverage = 8.0
+            
+        # Check Total Leverage
+        if current_leverage >= max_leverage:
+            return False, f"Total Leverage {current_leverage:.2f}x >= Max {max_leverage}x"
+            
+        return True, "OK"
+
+    def calculate_position_size(self, total_equity, current_positions, confidence=0.0, atr=0.0, price=0.0, market_mode="normal"):
+        """
+        Calculate position size based on:
+        - Max Single Position: 30% of Total Buying Power (Equity * MaxLeverage)
+        - Available Leverage Room
+        - [Phase 2] Kelly Criterion (Half-Kelly)
+        - [Phase 2] Volatility Scaling
+        """
+        
+        max_leverage = 5.0
+        if confidence > 0.8:
+            max_leverage = 8.0
+            
+        # Total Buying Power (Capacity)
+        total_capacity = total_equity * max_leverage
+        
+        # 1. Single Position Limit (30% of Total Capacity)
+        max_single_pos_val = total_capacity * 0.30
+        
+        # 2. Total Leverage Limit Check
+        total_notional = 0.0
+        for pos in current_positions.values():
+            val = float(pos.get('notional', 0.0))
+            if val == 0.0:
+                 val = float(pos.get('position_value_usdt', 0.0))
+            total_notional += abs(val)
+            
+        available_cap = total_capacity - total_notional
+        
+        if available_cap <= 0:
+            return 0.0
+            
+        # 3. [Phase 2] Kelly Criterion & Volatility Scaling
+        kelly_size = max_single_pos_val # Default to max if no advanced logic
+        
+        if confidence > 0 and price > 0:
+            # Determine Odds (Risk/Reward Ratio)
+            odds = 3.0 # Default Trend Mode (TP 6% / SL 2%)
+            if market_mode == 'low' or '[Scalp]' in market_mode: # Use string check if mode is complex
+                odds = 1.5 # Scalp Mode (TP 1.5% / SL 1%)
+            
+            # Calculate Kelly Fraction
+            # f = (p(b+1) - 1) / b
+            # p = confidence (win rate)
+            # b = odds
+            kelly_f = (confidence * (odds + 1) - 1) / odds
+            kelly_f = max(0.0, kelly_f)
+            
+            # Use Half-Kelly for safety
+            safe_kelly_f = kelly_f * 0.5
+            
+            # Calculate Kelly Position Size (Notional)
+            # Kelly fraction applies to TOTAL EQUITY, but leveraged.
+            # Usually Kelly gives % of bankroll to bet.
+            # Here we interpret it as % of Equity to risk? No, position size.
+            # Kelly formula gives % of capital to bet. 
+            # In crypto futures, "bet" is the margin? Or the risk amount?
+            # Standard Kelly is about risk amount. 
+            # Let's say we risk safe_kelly_f * Equity.
+            # Stop Loss is 2% (Trend) or 1% (Scalp).
+            # Position Size = (Risk Amount) / SL%
+            
+            sl_pct = 0.02 if odds == 3.0 else 0.01
+            risk_amount = total_equity * safe_kelly_f
+            kelly_position_notional = risk_amount / sl_pct
+            
+            # Apply Volatility Scaling
+            # If ATR% is high, reduce size.
+            # Benchmark ATR% = 1% (0.01). If ATR% > 1%, scale down.
+            if atr > 0:
+                atr_pct = atr / price
+                target_atr_pct = 0.01 # 1% volatility target
+                if atr_pct > target_atr_pct:
+                    vol_scale = target_atr_pct / atr_pct
+                    kelly_position_notional *= vol_scale
+            
+            # Log for debug
+            # logger.info(f"Kelly Calc: Conf={confidence:.2f}, Odds={odds}, HalfKelly={safe_kelly_f:.4f}, Risk=${risk_amount:.2f}, Pos=${kelly_position_notional:.2f}")
+            
+            kelly_size = kelly_position_notional
+
+        # Result is the smaller of all constraints
+        final_size = min(max_single_pos_val, available_cap, kelly_size)
+        return max(0.0, final_size)
+
     def analyze_technical_only(self, symbol):
         """
         Analyze a symbol using only technical indicators (for dynamic leaderboard coins).
@@ -286,6 +407,9 @@ class PortfolioManager:
             # TrendMLStrategy needs EMA200, so we need at least 200 bars. 500 is safe.
             df = collector.fetch_ohlcv(timeframe='1m', limit=500)
             
+            # [Phase 1] Fetch Order Book for OBI Analysis
+            order_book = collector.fetch_order_book(limit=20)
+            
             if df is None or df.empty:
                 logger.warning(f"[{symbol}] Failed to fetch live data.")
                 return None
@@ -306,6 +430,9 @@ class PortfolioManager:
             
             # Prepare extra_data for Strategy
             extra_data = {}
+            if order_book:
+                extra_data['order_book'] = order_book
+                
             if "30m" in preds:
                 extra_data['ml_prediction'] = preds["30m"]
             if "10m" in preds:
@@ -363,6 +490,61 @@ class PortfolioManager:
         Scan all active symbols concurrently.
         Returns sorted list of opportunities (or all results if return_all=True).
         """
+        # 1. Dynamic Config Adjustment (New Logic)
+        try:
+            # Get current Total Equity (Assume 100.0 if not available or passed in)
+            # In live mode, we should fetch from RealTrader or similar.
+            # But PortfolioManager is usually called by run_multicoin_bot which has traders.
+            # We can't access traders here easily unless passed in or fetched via API.
+            # For now, we assume Equity is passed or we fetch a global "Estimated Equity".
+            
+            # Since we don't have direct access to RealTrader instances here easily,
+            # we can try to infer Equity from config or a shared state file?
+            # Or better, let run_multicoin_bot handle the equity fetch and pass it?
+            # But scan_market is the main entry point.
+            
+            # Let's read equity from the shared status file if available
+            import json
+            equity = 100.0
+            try:
+                with open("data/real_trading_status.json", "r") as f:
+                    status = json.load(f)
+                    equity = float(status.get("equity", 0.0))
+                    if equity <= 0:
+                        equity = float(status.get("balance", 100.0))
+            except:
+                pass
+            
+            # Get Market Regime from last analysis or a quick check?
+            # We can use the FIRST symbol's analysis to determine regime, 
+            # as regime is usually market-wide for crypto.
+            # Or we can do a quick check on BTC.
+            
+            # Quick check on BTC for regime
+            regime = "uncertain"
+            try:
+                # Use BTC collector if available
+                btc_collector = self.collectors.get("BTCUSDT")
+                if btc_collector:
+                    df = btc_collector.fetch_ohlcv(timeframe='1h', limit=100)
+                    if not df.empty:
+                        from src.analysis.regime import MarketRegimeClassifier
+                        classifier = MarketRegimeClassifier()
+                        regime = classifier.classify(df)
+            except Exception as e:
+                logger.warning(f"Failed to detect regime for adjustment: {e}")
+
+            # Apply Dynamic Adjustment
+            # Assuming 0 drawdown for now as we don't track daily PnL here yet
+            # In future, we can read daily PnL from status file too.
+            dynamic_adjuster.adjust(current_equity=equity, market_regime=regime)
+            
+            # Reload config immediately to apply changes
+            self.reload_config()
+            
+        except Exception as e:
+            logger.error(f"Dynamic Adjustment Failed: {e}")
+
         results = []
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {executor.submit(self.analyze_symbol, sym): sym for sym in self.active_symbols}

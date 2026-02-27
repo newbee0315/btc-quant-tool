@@ -1,0 +1,7 @@
+{
+    "ml_threshold": 0.65,
+    "stop_loss": 0.02,
+    "take_profit": 0.04,
+    "ema_period": 200,
+    "rsi_period": 14
+}

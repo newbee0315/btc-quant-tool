@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 class CryptoDataCollector:
     def __init__(self, symbol='BTCUSDT', proxies=None):
         self.symbol = symbol.replace('/', '') # Ensure format is BTCUSDT
-        self.base_url = "https://data-api.binance.vision/api/v3"
+        # Switch to main API for better real-time data access (Depth/Ticker)
+        self.base_url = "https://api.binance.com/api/v3" 
         self.proxies = proxies
         self.last_valid_price = 69000.0  # Default fallback
         
@@ -191,10 +192,16 @@ class CryptoDataCollector:
                     float(candle[2]), # high
                     float(candle[3]), # low
                     float(candle[4]), # close
-                    float(candle[5])  # volume
+                    float(candle[5]), # volume
+                    float(candle[7]), # quote_volume
+                    float(candle[9]), # taker_buy_volume
+                    float(candle[10]) # taker_buy_quote_volume
                 ])
                 
-            df = pd.DataFrame(parsed_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df = pd.DataFrame(parsed_data, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume'
+            ])
             df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
             
             # Cache result
@@ -204,6 +211,20 @@ class CryptoDataCollector:
         except Exception as e:
             logger.warning(f"Error fetching OHLCV: {e}. Return Empty DF.")
             return pd.DataFrame()
+
+    def fetch_order_book(self, limit=10):
+        """Fetch current order book depth"""
+        try:
+            url = f"{self.base_url}/depth?symbol={self.symbol}&limit={limit}"
+            resp = self.session.get(url, timeout=5)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                logger.warning(f"Error fetching Order Book: {resp.status_code}")
+                return None
+        except Exception as e:
+            logger.warning(f"Exception fetching Order Book: {e}")
+            return None
 
     def _generate_dummy_ohlcv(self, limit, timeframe):
         """Generate dummy OHLCV data"""
@@ -268,7 +289,7 @@ class CryptoDataCollector:
                 # but fetch_ohlcv returns 1000 candles starting from 'since'.
                 # So just check the last timestamp.
                 
-                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume']].values.tolist()
+                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume']].values.tolist()
                 
                 # Filter duplicate/overlap if any (though 'since' logic should prevent it)
                 if all_ohlcv and raw_batch[0][0] <= all_ohlcv[-1][0]:
@@ -334,7 +355,7 @@ class CryptoDataCollector:
                 
                 # We need to extract the raw rows: [timestamp, open, high, low, close, volume]
                 # df_batch has 'datetime' col which we don't need in raw list
-                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume']].values.tolist()
+                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume']].values.tolist()
                 
                 all_ohlcv.extend(raw_batch)
                 last_time = raw_batch[-1][0]
@@ -359,7 +380,7 @@ class CryptoDataCollector:
         if not all_ohlcv:
             return pd.DataFrame()
             
-        df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume'])
         df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
         df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
         

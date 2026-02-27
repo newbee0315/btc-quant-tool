@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, Any
 from .base_strategy import BaseStrategy
 from .czsc_analyzer import create_czsc_analyzer
+from src.analysis.regime import MarketRegimeClassifier, MarketRegime
 
 from czsc import Freq
 
@@ -19,7 +20,7 @@ class TrendMLStrategy(BaseStrategy):
     4. CZSC Filter (Optional): Use Chanlun patterns (Fenxing, Bi, Divergence) to confirm entries.
     """
     
-    def __init__(self, ema_period: int = 200, rsi_period: int = 14, ml_threshold: float = 0.75, atr_period: int = 14, enable_czsc: bool = True):
+    def __init__(self, ema_period: int = 200, rsi_period: int = 14, ml_threshold: float = 0.60, atr_period: int = 14, enable_czsc: bool = True):
         super().__init__("TrendMLStrategy")
         self.ema_period = ema_period
         self.rsi_period = rsi_period
@@ -181,6 +182,17 @@ class TrendMLStrategy(BaseStrategy):
         # Calculate Volume MA (20)
         df['vol_ma'] = df['volume'].rolling(window=20).mean()
         
+        # Calculate Taker Buy/Sell Ratio (Flow)
+        if 'taker_buy_volume' in df.columns:
+            # Taker Buy Ratio = Taker Buy Vol / Taker Sell Vol
+            # Taker Sell Vol = Total Vol - Taker Buy Vol
+            taker_sell_vol = df['volume'] - df['taker_buy_volume']
+            # Avoid division by zero
+            taker_sell_vol = taker_sell_vol.replace(0, 0.0001)
+            df['taker_buy_ratio'] = df['taker_buy_volume'] / taker_sell_vol
+        else:
+            df['taker_buy_ratio'] = 1.0 # Neutral default
+
         # Calculate Volatility Metrics for Multi-Mode
         df['returns'] = df['close'].pct_change()
         df['volatility'] = df['returns'].rolling(window=20).std()
@@ -203,6 +215,7 @@ class TrendMLStrategy(BaseStrategy):
             
             czsc_bullish_list = []
             czsc_bearish_list = []
+            czsc_details_list = []
             
             for i, bar in enumerate(bars):
                 # 更新分析器
@@ -212,28 +225,58 @@ class TrendMLStrategy(BaseStrategy):
                 res = self.czsc_analyzer_5m.get_analysis_result("BACKTEST")
                 current_rsi = rsi_values[i]
                 
-                # 检查底背驰 + 底分型
+                # 检查缠论买点 (一买、二买、三买)
                 is_bullish = False
+                details = []
+                tp = res.get('trade_points', {})
+                
+                if tp.get('first_buy'): 
+                    is_bullish = True
+                    details.append("一买")
+                if tp.get('second_buy'): 
+                    is_bullish = True
+                    details.append("二买")
+                if tp.get('third_buy'): 
+                    is_bullish = True
+                    details.append("三买")
+                
+                # 保留原有的底背驰检查作为补充 (因为一买就是底背驰，这里可能重复但无害)
                 if res['divergence']['has_divergence'] and res['divergence']['type'] == '底背驰':
                     is_bullish = True
+                    details.append("底背驰")
                 elif res['fenxing']['has_fenxing'] and res['fenxing']['type'] == '底分型':
-                    # 只有底分型可能不够强，结合 RSI
-                    if current_rsi < 45: 
+                    # 只有底分型可能不够强，结合 RSI (更严格: < 30)
+                    if current_rsi < 30: 
                          is_bullish = True
+                         details.append("底分型+超卖")
                 
-                # 检查顶背驰 + 顶分型
+                # 检查缠论卖点 (一卖、二卖、三卖)
                 is_bearish = False
+                if tp.get('first_sell'): 
+                    is_bearish = True
+                    details.append("一卖")
+                if tp.get('second_sell'): 
+                    is_bearish = True
+                    details.append("二卖")
+                if tp.get('third_sell'): 
+                    is_bearish = True
+                    details.append("三卖")
+                
                 if res['divergence']['has_divergence'] and res['divergence']['type'] == '顶背驰':
                     is_bearish = True
+                    details.append("顶背驰")
                 elif res['fenxing']['has_fenxing'] and res['fenxing']['type'] == '顶分型':
-                     if current_rsi > 55:
+                     if current_rsi > 70:
                          is_bearish = True
+                         details.append("顶分型+超买")
                     
                 czsc_bullish_list.append(is_bullish)
                 czsc_bearish_list.append(is_bearish)
+                czsc_details_list.append(",".join(details))
                 
             df['czsc_bullish'] = czsc_bullish_list
             df['czsc_bearish'] = czsc_bearish_list
+            df['czsc_details'] = czsc_details_list
 
 
         
@@ -264,10 +307,22 @@ class TrendMLStrategy(BaseStrategy):
         
         # Determine Market Mode
         market_mode = "normal"
-        if atr < (atr_ma * 0.7) and volatility < 0.008:
-            market_mode = "low"
-        elif atr > (atr_ma * 1.3) or volatility > 0.015:
-            market_mode = "high"
+        
+        # Use Regime Classifier result if available
+        if extra_data and 'market_regime' in extra_data:
+            regime = extra_data['market_regime']
+            if regime == MarketRegime.RANGING.value:
+                market_mode = "low"
+            elif regime == MarketRegime.VOLATILE.value:
+                market_mode = "high"
+            elif regime == MarketRegime.TRENDING.value:
+                market_mode = "normal" # Standard Trend Mode
+        else:
+            # Fallback to old logic
+            if atr < (atr_ma * 0.7) and volatility < 0.008:
+                market_mode = "low"
+            elif atr > (atr_ma * 1.3) or volatility > 0.015:
+                market_mode = "high"
             
         # 2. Get ML Prediction (Multi-Horizon Consensus)
         ml_prob = 0.5
@@ -304,11 +359,11 @@ class TrendMLStrategy(BaseStrategy):
         is_ha_bearish = ha_close < ha_open
         
         # ML Consensus (Adaptive Threshold)
-        # Optimized: Lower threshold to 0.65 base to catch more moves (Higher Frequency)
-        effective_threshold = 0.65
+        # Optimized: Use configured threshold (0.60) as base, adjust for market conditions
+        effective_threshold = self.ml_threshold
         
-        if market_mode == 'low': effective_threshold = 0.70
-        if market_mode == 'high': effective_threshold = 0.75
+        if market_mode == 'low': effective_threshold = min(0.80, self.ml_threshold + 0.10)
+        if market_mode == 'high': effective_threshold = max(0.55, self.ml_threshold - 0.05)
         
         is_ml_bullish = ml_prob >= effective_threshold
         is_ml_bearish = ml_prob <= (1 - effective_threshold)
@@ -328,11 +383,51 @@ class TrendMLStrategy(BaseStrategy):
             
         # Long Logic
         # Use HA Close for smoother trend check
-        is_uptrend = ha_close > ema_trend 
-        is_rsi_safe_long = rsi < 75 # Relaxed from 70
-        is_strong_adx = adx > 15 # Relaxed from 20 for more signals
+        # Aggressive: Allow 0.5% buffer below EMA
+        is_uptrend = ha_close > (ema_trend * 0.995) 
+        is_rsi_safe_long = rsi < 80 # Relaxed from 75
+        is_strong_adx = adx > 10 # Relaxed from 15 for more signals
         is_macd_bullish = macd_hist > 0 and macd_hist > prev_macd_hist
         
+        # High Frequency Scalping Mode (Low Volatility)
+        is_scalp_long = False
+        is_scalp_short = False
+        
+        # [Phase 1] Data Depth & Flow Analysis
+        obi = 0.0
+        if extra_data and 'order_book' in extra_data:
+            ob = extra_data['order_book']
+            bids = ob.get('bids', [])
+            asks = ob.get('asks', [])
+            if bids and asks:
+                # Top 5 levels depth
+                bid_qty = sum([float(b[1]) for b in bids[:5]])
+                ask_qty = sum([float(a[1]) for a in asks[:5]])
+                if bid_qty + ask_qty > 0:
+                    obi = (bid_qty - ask_qty) / (bid_qty + ask_qty)
+        
+        taker_buy_ratio = row.get('taker_buy_ratio', 1.0)
+        
+        if market_mode == 'low':
+            # In low volatility, we scalp small moves
+            # Conditions:
+            # 1. HA Candle is Green (Bullish)
+            # 2. RSI is not overbought (< 70)
+            # 3. Price is above Fast EMA (50)
+            # 4. ML is neutral or bullish (> 0.45)
+            # 5. [New] OBI > 0.1 (More bids than asks)
+            # 6. [New] Taker Buy Ratio > 1.05 (More buying pressure)
+            
+            if is_ha_bullish and rsi < 70 and ha_close > ema_fast and ml_prob > 0.45:
+                # Check Flow and Depth
+                if obi > 0.1 and taker_buy_ratio > 1.05:
+                    is_scalp_long = True
+            
+            # Scalp Short
+            if is_ha_bearish and rsi > 30 and ha_close < ema_fast and ml_prob < 0.55:
+                 if obi < -0.1 and taker_buy_ratio < 0.95:
+                     is_scalp_short = True
+                
         # 缠论增强: 底分型确认或中枢突破
         is_chan_confirmed_long = False
         if self.enable_czsc:
@@ -346,19 +441,31 @@ class TrendMLStrategy(BaseStrategy):
         should_enter_long = is_ml_bullish
         if is_chan_confirmed_long and is_volume_support:
              should_enter_long = True
-
+        
+        # Enable entry if Scalping Mode is active
+        if is_scalp_long:
+            should_enter_long = True
+        
         # Standard Trend Logic
         # CZSC Filter: Don't enter Long if CZSC is Bearish (Top Divergence/Sell Point)
-        if self.enable_czsc and is_chan_bearish:
+        if self.enable_czsc and is_chan_bearish and not is_scalp_long:
              should_enter_long = False
 
-        if is_uptrend and is_ha_bullish and is_rsi_safe_long and is_macd_bullish and should_enter_long and is_strong_adx:
+        if (is_uptrend or is_scalp_long) and is_ha_bullish and is_rsi_safe_long and (is_macd_bullish or is_scalp_long) and should_enter_long and is_strong_adx:
             signal = 1
-            reason.append(f"HA价格>EMA200")
+            if is_scalp_long:
+                reason.append(f"[Scalp] LowVol+HA_Bullish")
+                reason.append(f"OBI({obi:.2f})>0.1")
+                reason.append(f"Flow({taker_buy_ratio:.2f})>1.05")
+            else:
+                reason.append(f"HA价格>EMA200")
+            
             reason.append(f"HA阳线")
-            reason.append(f"ADX>20")
-            reason.append(f"RSI({rsi:.1f})<70")
-            reason.append(f"MACD金叉增强")
+            reason.append(f"ADX>10")
+            reason.append(f"RSI({rsi:.1f})<80")
+            
+            if is_macd_bullish:
+                reason.append(f"MACD金叉增强")
             if is_ml_bullish:
                 reason.append(f"ML30m({ml_prob:.2f})>=Threshold")
             if is_chan_confirmed_long:
@@ -377,8 +484,9 @@ class TrendMLStrategy(BaseStrategy):
                 reason.append(f"ML确认({ml_prob:.2f})>0.7")
         
         # Short Logic
-        is_downtrend = ha_close < ema_trend
-        is_rsi_safe_short = rsi > 25 # Relaxed from 30
+        # Aggressive: Allow 0.5% buffer above EMA
+        is_downtrend = ha_close < (ema_trend * 1.005)
+        is_rsi_safe_short = rsi > 20 # Relaxed from 25
         is_macd_bearish = macd_hist < 0 and macd_hist < prev_macd_hist
         
         # 缠论增强: 顶分型确认或中枢跌破
@@ -390,13 +498,21 @@ class TrendMLStrategy(BaseStrategy):
         if is_chan_confirmed_short and is_volume_support:
              should_enter_short = True
         
+        if is_scalp_short:
+             should_enter_short = True
+        
         # CZSC Filter: Don't enter Short if CZSC is Bullish (Bottom Divergence/Buy Point)
-        if self.enable_czsc and is_chan_bullish:
+        if self.enable_czsc and is_chan_bullish and not is_scalp_short:
              should_enter_short = False
 
-        if is_downtrend and is_ha_bearish and is_rsi_safe_short and is_macd_bearish and should_enter_short and is_strong_adx:
+        if (is_downtrend or is_scalp_short) and is_ha_bearish and is_rsi_safe_short and (is_macd_bearish or is_scalp_short) and should_enter_short and is_strong_adx:
             signal = -1
-            reason.append(f"HA价格<EMA200")
+            if is_scalp_short:
+                reason.append(f"[Scalp] LowVol+HA_Bearish")
+                reason.append(f"OBI({obi:.2f})<-0.1")
+                reason.append(f"Flow({taker_buy_ratio:.2f})<0.95")
+            else:
+                reason.append(f"HA价格<EMA200")
             reason.append(f"HA阴线")
             reason.append(f"ADX>20")
             reason.append(f"RSI({rsi:.1f})>30")
@@ -420,50 +536,40 @@ class TrendMLStrategy(BaseStrategy):
 
 
         # -----------------------------------------------------------
-        # High Frequency Scalping Mode (Added to increase frequency)
+        # High Frequency Scalping Mode (DISABLED for Strict Strategy Adherence)
         # -----------------------------------------------------------
-        if signal == 0:
-            # Scalp Long
-            # 1. Trend: HA > EMA50 (Shorter term trend)
-            # 2. ML: 10m Probability > 0.60 (Stronger short-term confidence, relaxed from 0.65)
-            # 3. RSI: Not overbought (< 75)
-            # 4. Volume: Above average (Confirmation)
-            # 5. CZSC: No Bearish Signal (Filter)
-            is_scalp_trend_up = ha_close > ema_fast
-            is_ml10_strong_bull = ml_prob_10m >= 0.60
-            is_rsi_scalp_long = rsi < 75
+        # if signal == 0:
+        #     # Scalp Long
+        #     is_scalp_trend_up = ha_close > ema_fast
+        #     is_ml10_strong_bull = ml_prob_10m >= 0.75 # Was 0.60
+        #     is_rsi_scalp_long = rsi < 75
             
-            czsc_filter_pass_long = True
-            if self.enable_czsc and is_chan_bearish:
-                 czsc_filter_pass_long = False # 缠论看空时不做多
+        #     czsc_filter_pass_long = True
+        #     if self.enable_czsc and is_chan_bearish:
+        #          czsc_filter_pass_long = False 
             
-            if is_scalp_trend_up and is_ml10_strong_bull and is_rsi_scalp_long and is_volume_support and czsc_filter_pass_long:
-                signal = 1
-                reason.append(f"[Scalp]HA>EMA50")
-                reason.append(f"ML10m({ml_prob_10m:.2f})>=0.60")
-                reason.append(f"Vol>MA")
-                reason.append(f"RSI({rsi:.1f})")
+        #     if is_scalp_trend_up and is_ml10_strong_bull and is_rsi_scalp_long and is_volume_support and czsc_filter_pass_long:
+        #         signal = 1
+        #         reason.append(f"[Scalp]HA>EMA50")
+        #         reason.append(f"ML10m({ml_prob_10m:.2f})>=0.75")
+        #         reason.append(f"Vol>MA")
+        #         reason.append(f"RSI({rsi:.1f})")
 
-            # Scalp Short
-            # 1. Trend: HA < EMA50
-            # 2. ML: 10m Probability < 0.40 (Relaxed from 0.35)
-            # 3. RSI: Not oversold (> 25)
-            # 4. Volume: Above average
-            # 5. CZSC: No Bullish Signal (Filter)
-            is_scalp_trend_down = ha_close < ema_fast
-            is_ml10_strong_bear = ml_prob_10m <= 0.40
-            is_rsi_scalp_short = rsi > 25
+        #     # Scalp Short
+        #     is_scalp_trend_down = ha_close < ema_fast
+        #     is_ml10_strong_bear = ml_prob_10m <= 0.25 # Was 0.40
+        #     is_rsi_scalp_short = rsi > 25
             
-            czsc_filter_pass_short = True
-            if self.enable_czsc and is_chan_bullish:
-                 czsc_filter_pass_short = False # 缠论看多时不做空
+        #     czsc_filter_pass_short = True
+        #     if self.enable_czsc and is_chan_bullish:
+        #          czsc_filter_pass_short = False
             
-            if is_scalp_trend_down and is_ml10_strong_bear and is_rsi_scalp_short and is_volume_support and czsc_filter_pass_short:
-                signal = -1
-                reason.append(f"[Scalp]HA<EMA50")
-                reason.append(f"ML10m({ml_prob_10m:.2f})<=0.40")
-                reason.append(f"Vol>MA")
-                reason.append(f"RSI({rsi:.1f})")
+        #     if is_scalp_trend_down and is_ml10_strong_bear and is_rsi_scalp_short and is_volume_support and czsc_filter_pass_short:
+        #         signal = -1
+        #         reason.append(f"[Scalp]HA<EMA50")
+        #         reason.append(f"ML10m({ml_prob_10m:.2f})<=0.25")
+        #         reason.append(f"Vol>MA")
+        #         reason.append(f"RSI({rsi:.1f})")
         
         # If no signal, add reasons for why (for debugging/transparency)
         if signal == 0:
@@ -495,42 +601,34 @@ class TrendMLStrategy(BaseStrategy):
             total_capital = extra_data.get('total_capital', 10.0) if extra_data else 10.0
             
             # Risk Parameters
-            # Optimized: Increase base risk for compounding (15% position size logic handled in bot)
-            # Here we just suggest technical SL/TP prices
+            # User Requirement: 
+            # 1. Trend Mode: Risk-Reward 1:3, 2% Hard Stop Loss
+            # 2. Scalp Mode: High Frequency (Tighter SL/TP)
             
-            # Calculate SL Distance based on Mode
-            # Optimized: Tighter SL (1.5% - 2%) -> Adjusted to Min 2% per documentation to avoid noise
-            sl_mult = 2.0 # Standard SL multiplier (was 3.0)
-            tp_mult = 4.0 # TP multiplier (Aim for 2:1 ratio)
-            min_sl_pct = 0.02 # 2.0% minimum (Matches documentation)
-            
-            if market_mode == 'low':
-                sl_mult = 4.0 # Wider SL for low vol noise
-                tp_mult = 1.5 # Quick scalp
-            elif market_mode == 'high':
-                sl_mult = 2.5 
-                tp_mult = 5.0 # Let profits run
-                
-            # Adaptive SL for High Confidence
-            if ml_prob > 0.8:
-                tp_mult += 1.0 # Aim for higher reward, keep SL tight
-            
-            sl_dist = atr * sl_mult
-            
-            # Enforce Min/Max SL distance
-            # Cap max SL at 2% to ensure R:R
-            if (sl_dist / close_price) < min_sl_pct:
-                sl_dist = close_price * min_sl_pct
-            elif (sl_dist / close_price) > 0.03: # Max 3% SL
-                sl_dist = close_price * 0.03
-            
-            # TP Distance
-            # Aim for 1:2 R:R (TP = 2 * SL)
-            tp_dist = sl_dist * 2.0 
-            
-            # Special case for Scalp Mode: Fixed TP % (1.0%)
             if market_mode == 'low' or '[Scalp]' in str(reason):
-                tp_dist = close_price * 0.01 
+                # Scalping Mode (High Frequency)
+                # SL 1%, TP 1.5% (R:R 1.5)
+                sl_pct = 0.01
+                tp_pct = 0.015
+                
+                sl_dist = close_price * sl_pct
+                tp_dist = close_price * tp_pct
+                
+                # Add log
+                reason.append(f"Risk:Scalp(SL{sl_pct*100}%/TP{tp_pct*100}%)")
+            else:
+                # Trend Mode (Normal/High Volatility)
+                # SL 2% (Hard), TP 6% (Target 1:3)
+                sl_pct = 0.02
+                tp_pct = 0.06
+                
+                # Dynamic adjustment for High Volatility?
+                # User said "2% hard stop-loss", so we stick to 2%.
+                
+                sl_dist = close_price * sl_pct
+                tp_dist = close_price * tp_pct
+                
+                reason.append(f"Risk:Trend(SL{sl_pct*100}%/TP{tp_pct*100}%)")
 
             if signal == 1:
                 sl_price = close_price - sl_dist
@@ -567,13 +665,15 @@ class TrendMLStrategy(BaseStrategy):
                 "atr": atr,
                 "ml_prob": ml_prob,
                 "macd_hist": macd_hist,
-                "adx": adx
+                "adx": adx,
+                "czsc_details": row.get('czsc_details', "")
             },
             "trade_params": {
                 "sl_price": sl_price,
                 "tp_price": tp_price,
                 "leverage": int(suggested_leverage),
-                "position_size": position_size
+                "position_size": position_size,
+                "market_mode": market_mode
             }
         }
 
@@ -584,7 +684,16 @@ class TrendMLStrategy(BaseStrategy):
         # 1. Calculate Indicators
         df = self.calculate_indicators(df)
         
-        # 2. Get Signal from last row
+        # 2. Market Regime Classification
+        classifier = MarketRegimeClassifier()
+        regime = classifier.classify(df)
+        
+        # Pass regime to get_signal via extra_data
+        if extra_data is None:
+            extra_data = {}
+        extra_data['market_regime'] = regime
+        
+        # 3. Get Signal from last row
         if len(df) < 2:
              return {"signal": 0, "reason": "Not enough data"}
              

@@ -15,7 +15,7 @@ interface EquityHistoryChartProps {
 export const EquityHistoryChart: React.FC<EquityHistoryChartProps> = ({ data }) => {
     if (!data || data.length === 0) {
         return (
-            <div className="w-full h-full min-h-[250px] bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] flex items-center justify-center">
+            <div className="w-full h-full min-h-[250px] bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] flex items-center justify-center">
                 <div className="text-gray-500 text-sm">No equity history data</div>
             </div>
         );
@@ -27,7 +27,7 @@ export const EquityHistoryChart: React.FC<EquityHistoryChartProps> = ({ data }) 
     };
 
     return (
-        <div className="w-full h-full bg-[#1E2329] p-4 rounded-xl border border-[#2B3139]">
+        <div className="w-full h-full bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139]">
             <div className="text-sm font-medium text-gray-400 mb-4 flex justify-between items-center">
                 <span>Total Equity History</span>
                 <span className="text-xs text-gray-500">Hourly Updates</span>

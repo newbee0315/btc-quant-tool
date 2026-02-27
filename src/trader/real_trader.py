@@ -271,6 +271,103 @@ class RealTrader:
                     return 0.0
             return 0.0
 
+    def get_open_orders(self, symbol: str = None):
+        """Fetch all open orders (standard + algo)"""
+        if not self.exchange:
+            return []
+            
+        try:
+            # 1. Fetch Standard Open Orders
+            open_orders = []
+            if symbol:
+                try:
+                    open_orders = self._safe_exchange_call('fetch_open_orders', symbol)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch open orders for {symbol}: {e}")
+            else:
+                # Try to use cache first
+                import time
+                now = time.time()
+                if self.cached_open_orders and (now - self.last_open_orders_fetch < self.open_orders_cache_ttl):
+                    open_orders = self.cached_open_orders
+                else:
+                    # Try global fetch first
+                    try:
+                        open_orders = self._safe_exchange_call('fetch_open_orders')
+                        self.cached_open_orders = open_orders
+                        self.last_open_orders_fetch = now
+                    except Exception as e:
+                        # Fallback to monitored symbols
+                        unique_symbols = list(set(self.monitored_symbols))
+                        for sym in unique_symbols:
+                            try:
+                                orders = self._safe_exchange_call('fetch_open_orders', sym)
+                                open_orders.extend(orders)
+                            except Exception:
+                                pass
+                        self.cached_open_orders = open_orders
+                        self.last_open_orders_fetch = now
+
+            # 2. Fetch Algo Orders
+            algo_orders = []
+            try:
+                params = {}
+                if symbol:
+                    params['symbol'] = symbol.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
+                
+                # fapiPrivateGetOpenAlgoOrders returns orders for all symbols if symbol param is omitted
+                raw_algos = self._safe_exchange_call('fapiPrivateGetOpenAlgoOrders', params)
+                algo_orders = raw_algos
+            except Exception as e:
+                logger.warning(f"Could not fetch algo orders: {e}")
+
+            # 3. Format and Combine
+            formatted_orders = []
+
+            for o in open_orders:
+                formatted_orders.append({
+                    'id': str(o['id']),
+                    'symbol': o['symbol'],
+                    'type': o['type'],
+                    'side': o['side'],
+                    'price': float(o.get('price') or 0.0),
+                    'amount': float(o.get('amount') or 0.0),
+                    'filled': float(o.get('filled') or 0.0),
+                    'remaining': float(o.get('remaining') or 0.0),
+                    'status': o.get('status'),
+                    'stop_price': float(o.get('stopPrice') or 0.0),
+                    'reduce_only': o.get('reduceOnly', False),
+                    'timestamp': o['timestamp'],
+                    'datetime': o.get('datetime'),
+                    'is_algo': False
+                })
+
+            for o in algo_orders:
+                # Algo order structure is different
+                # e.g. {'algoId': 123, 'symbol': 'BTCUSDT', 'side': 'BUY', 'orderType': 'STOP', ...}
+                formatted_orders.append({
+                    'id': str(o.get('algoId')),
+                    'symbol': o.get('symbol'),
+                    'type': o.get('orderType', 'ALGO'),
+                    'side': o.get('side', '').lower(),
+                    'price': float(o.get('price') or 0.0), # might be 0 for market
+                    'amount': float(o.get('quantity') or o.get('executedQty') or 0.0),
+                    'filled': float(o.get('executedQty') or 0.0),
+                    'remaining': 0.0, # Not usually provided for algo orders until triggered
+                    'status': 'NEW', # Algo orders are usually pending/new
+                    'stop_price': float(o.get('stopPrice') or o.get('triggerPrice') or 0.0),
+                    'reduce_only': o.get('reduceOnly', False),
+                    'timestamp': o.get('bookTime') or o.get('updateTime'),
+                    'datetime': None, # Client can convert
+                    'is_algo': True
+                })
+
+            return formatted_orders
+
+        except Exception as e:
+            logger.error(f"Error in get_open_orders: {e}")
+            return []
+
     def get_positions(self, symbol: str = None):
         """Fetch all active positions from the account, or only for a specific symbol"""
         if not self.exchange:
@@ -407,10 +504,14 @@ class RealTrader:
                         position_value_usdt = amount * mark_price
                         
                         leverage = self.leverage
-                        if pos.get('leverage'):
+                        # Prioritize raw info leverage as it is most reliable for Binance Futures
+                        if 'info' in pos and 'leverage' in pos['info']:
+                            try:
+                                leverage = float(pos['info']['leverage'])
+                            except:
+                                pass
+                        elif pos.get('leverage'):
                             leverage = float(pos['leverage'])
-                        elif 'info' in pos and 'leverage' in pos['info']:
-                            leverage = float(pos['info']['leverage'])
                         
                         if initial_margin == 0 and leverage > 0:
                             entry_value = float(pos.get('entryPrice') or 0.0) * amount
@@ -537,6 +638,97 @@ class RealTrader:
         except Exception as e:
             logger.error(f"Error checking risk limit: {e}")
             return False # Fail safe
+
+    def _smart_entry(self, symbol: str, side: str, amount: float, timeout: int = 5):
+        """
+        Smart Entry Logic (Phase 4):
+        1. Try to place Limit Order at Best Bid (Buy) or Best Ask (Sell) to be a Maker.
+        2. Wait for `timeout` seconds.
+        3. If not filled, Cancel and Chase with Market Order (Taker).
+        """
+        try:
+            # 1. Fetch Ticker for Best Price
+            ticker = self._safe_exchange_call('fetch_ticker', symbol)
+            # Buy: Bid (Maker), Sell: Ask (Maker)
+            price = float(ticker['bid']) if side == 'buy' else float(ticker['ask'])
+            
+            # Ensure price precision
+            price = float(self.exchange.price_to_precision(symbol, price))
+            
+            # 2. Place Limit Order
+            logger.info(f"⏳ Smart Entry: Placing LIMIT {side} {amount} @ {price}...")
+            # Note: Binance Futures Limit Order requires timeInForce usually, default GTC is fine
+            limit_order = self._safe_exchange_call('create_order', symbol, 'LIMIT', side, amount, price, params={'timeInForce': 'GTC'})
+            
+            # 3. Wait and Monitor
+            start_time = time.time()
+            filled_amount = 0.0
+            
+            while time.time() - start_time < timeout:
+                time.sleep(1) # Check every 1s
+                
+                try:
+                    updated_order = self._safe_exchange_call('fetch_order', limit_order['id'], symbol)
+                    status = updated_order['status']
+                    
+                    if status == 'closed':
+                        logger.info(f"✅ Smart Entry: LIMIT Filled @ {updated_order.get('average', price)}")
+                        return updated_order
+                        
+                    if status == 'canceled':
+                        logger.warning("Smart Entry: Order canceled externally. Switching to Market.")
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Smart Entry: Error monitoring order: {e}")
+            
+            # 4. Timeout or Cancelled -> Chase with Market
+            logger.info(f"⚡ Smart Entry: Timeout ({timeout}s). Canceling LIMIT and Chasing MARKET...")
+            
+            # Cancel Limit
+            cancel_success = False
+            try:
+                self._safe_exchange_call('cancel_order', limit_order['id'], symbol)
+                cancel_success = True
+            except Exception as e:
+                logger.warning(f"Smart Entry: Cancel failed (might be filled): {e}")
+            
+            # Check status one last time to avoid double fill
+            try:
+                final_check = self._safe_exchange_call('fetch_order', limit_order['id'], symbol)
+                if final_check['status'] == 'closed':
+                    logger.info("Smart Entry: Limit actually filled during cancel.")
+                    return final_check
+                
+                filled_amount = float(final_check.get('filled', 0.0))
+            except Exception as e:
+                logger.error(f"Smart Entry: Failed final check. {e}")
+                if not cancel_success:
+                    logger.error("Smart Entry: CRITICAL - Cancel failed AND Fetch failed. Aborting chase to avoid double fill.")
+                    raise Exception(f"Smart Entry Critical Error: Cancel & Fetch failed for {limit_order['id']}")
+                else:
+                    # If cancel succeeded but fetch failed, we assume 0 filled (risky but rare) or abort?
+                    # Safest is to abort to prevent over-buying
+                    logger.error("Smart Entry: Cancel success but Fetch failed. Aborting chase.")
+                    raise e
+                
+            remaining = amount - filled_amount
+            if remaining > 0:
+                # Adjust precision
+                remaining = float(self.exchange.amount_to_precision(symbol, remaining))
+                logger.info(f"Smart Entry: Executing Market Order for remaining {remaining}...")
+                market_order = self._safe_exchange_call('create_order', symbol, 'MARKET', side, remaining)
+                
+                # If we had partial fill, strictly speaking we should merge results, 
+                # but returning the market order is sufficient for execute_trade to get 'average' price 
+                # (which dominates the cost basis if limit fill was small).
+                return market_order
+            else:
+                return final_check
+
+        except Exception as e:
+            logger.error(f"Smart Entry Failed: {e}. Fallback to Market.")
+            return self._safe_exchange_call('create_order', symbol, 'MARKET', side, amount)
 
     def execute_trade(self, signal: int, sl_pct: float = 0.03, tp_pct: float = 0.025, sl_price: float = None, tp_price: float = None, leverage: int = None, amount_coins: float = None, symbol: str = None):
         """
@@ -677,12 +869,20 @@ class RealTrader:
                         return
 
                 else:
-                    # Standard Execution
+                    # Standard Execution (Smart Entry Phase 4)
                     try:
-                        order = self._safe_exchange_call('create_order', target_symbol, 'market', side, amount)
+                        # Use Smart Entry (Limit -> Market Chase)
+                        # Timeout 5s for High Frequency context
+                        order = self._smart_entry(target_symbol, side, amount, timeout=5)
+                        
                         logger.info(f"Order placed: {order['id']}")
                         executed_amount = float(order['filled']) if order.get('filled') else amount
                         entry_price = float(order['average']) if order.get('average') else price
+                        
+                        # Fallback if average is None
+                        if entry_price == 0.0:
+                            entry_price = price
+                            
                     except Exception as e:
                         if "insufficient" in str(e).lower() or "margin" in str(e).lower():
                             logger.warning(f"Skipping trade due to insufficient margin: {e}")
@@ -1486,6 +1686,10 @@ class RealTrader:
             
             # Get Stats
             stats = self.get_stats()
+            
+            # Fetch detailed open orders
+            open_orders = self.get_open_orders()
+            self.open_orders_count = len(open_orders)
                 
             status = {
                 "active": self.active,
@@ -1494,6 +1698,7 @@ class RealTrader:
                 "equity": equity, # Real Equity
                 "unrealized_pnl": unrealized_pnl, # Added Unrealized PnL
                 "positions": positions_dict,
+                "open_orders": open_orders, # Detailed open orders list for frontend
                 "trade_history": trade_history,
                 "stats": stats,
                 "initial_balance": self.initial_balance if self.initial_balance else wallet_balance,

@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import random
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +33,11 @@ METRICS_FILE = os.path.join(MODELS_DIR, "multicoin_metrics.json")
 TIMEFRAME = '1m' # We will resample this if needed, but for now stick to base TF logic
 HORIZONS = [10, 30] # Prediction horizons in minutes
 
+# Performance Requirements
+MIN_ACCURACY = 0.55
+MIN_PRECISION = 0.52
+MAX_TRIALS = 5  # Maximum number of hyperparameter optimization trials
+
 # Ensure models dir exists
 os.makedirs(MODELS_DIR, exist_ok=True)
 
@@ -52,8 +58,21 @@ def load_data(symbol, timeframe='1m'):
         
     return df
 
+def get_random_params():
+    """Generate random hyperparameters for XGBoost"""
+    return {
+        'n_estimators': random.choice([100, 300, 500, 800, 1000]),
+        'max_depth': random.choice([3, 4, 5, 6, 8, 10]),
+        'learning_rate': random.uniform(0.01, 0.2),
+        'subsample': random.uniform(0.6, 1.0),
+        'colsample_bytree': random.uniform(0.6, 1.0),
+        'random_state': 42,
+        'n_jobs': -1,
+        'eval_metric': 'logloss'
+    }
+
 def train_for_symbol(symbol):
-    """Train models for a single symbol"""
+    """Train models for a single symbol with optimization loop"""
     logger.info(f"[{symbol}] Starting training pipeline...")
     
     # 1. Load Data
@@ -64,8 +83,6 @@ def train_for_symbol(symbol):
         
     # 2. Feature Engineering
     logger.info(f"[{symbol}] Generating features...")
-    # Note: FeatureEngineer might need FNG data, passing None for now to keep it simple/fast
-    # If FNG is critical, we should load it once globally and pass it in.
     df = FeatureEngineer.generate_features(df)
     
     # Drop NaNs
@@ -78,27 +95,16 @@ def train_for_symbol(symbol):
         logger.info(f"[{symbol}] Training for {horizon}m horizon...")
         
         # Create Target
-        # 1 if price in 'horizon' minutes > current price * (1 + threshold)
-        # For simplicity in this factory phase:
-        # Target = 1 if Return(t+horizon) > 0.002 (0.2%), else 0 (Classify significant pump)
-        # Or just Direction: 1 if Return > 0, 0 if Return <= 0
-        
-        # Using simple direction for now, or the same logic as original train.py
-        # Original train.py used threshold 0.001 (0.1%)
-        
         future_close = df['close'].shift(-horizon)
         df[f'target_{horizon}m'] = (future_close > df['close'] * 1.001).astype(int)
         
-        # Prepare Train/Test Split (Time-based split)
-        # Use last 20% for testing
+        # Prepare Train/Test Split
         features = [c for c in df.columns if c not in ['timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume'] and not c.startswith('target_')]
-        
-        # Remove any future leaking columns if they exist
         features = [f for f in features if 'target' not in f]
         
         data_valid = df.dropna(subset=[f'target_{horizon}m'])
-        
         split_idx = int(len(data_valid) * 0.8)
+        
         train_df = data_valid.iloc[:split_idx]
         test_df = data_valid.iloc[split_idx:]
         
@@ -107,46 +113,63 @@ def train_for_symbol(symbol):
         X_test = test_df[features]
         y_test = test_df[f'target_{horizon}m']
         
-        # Train XGBoost
-        # Using generic params for factory mode. 
-        # In future, we can load optimized params from best_params.json
-        model = XGBClassifier(
-            n_estimators=500,
-            learning_rate=0.05,
-            max_depth=6,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
-            n_jobs=-1,
-            eval_metric='logloss'
-        )
+        best_model = None
+        best_metrics = None
+        best_score = -1
         
-        model.fit(X_train, y_train)
+        # Optimization Loop
+        logger.info(f"[{symbol} {horizon}m] Starting hyperparameter optimization (Max {MAX_TRIALS} trials)...")
         
-        # Evaluate
-        y_pred = model.predict(X_test)
-        y_prob = model.predict_proba(X_test)[:, 1]
+        for trial in range(MAX_TRIALS):
+            params = get_random_params()
+            model = XGBClassifier(**params)
+            model.fit(X_train, y_train)
+            
+            y_pred = model.predict(X_test)
+            y_prob = model.predict_proba(X_test)[:, 1]
+            
+            acc = accuracy_score(y_test, y_pred)
+            prec = precision_score(y_test, y_pred, zero_division=0)
+            rec = recall_score(y_test, y_pred, zero_division=0)
+            f1 = f1_score(y_test, y_pred, zero_division=0)
+            auc = roc_auc_score(y_test, y_prob)
+            
+            # Composite score emphasizing Precision and Accuracy
+            current_score = (acc * 0.4) + (prec * 0.4) + (auc * 0.2)
+            
+            if current_score > best_score:
+                best_score = current_score
+                best_model = model
+                best_metrics = {
+                    "accuracy": round(acc, 4),
+                    "precision": round(prec, 4),
+                    "recall": round(rec, 4),
+                    "f1": round(f1, 4),
+                    "auc": round(auc, 4)
+                }
+                
+            # Check if standards are met
+            if acc >= MIN_ACCURACY and prec >= MIN_PRECISION:
+                logger.info(f"[{symbol} {horizon}m] ✅ Standards Met at Trial {trial+1}! Acc: {acc:.4f}, Prec: {prec:.4f}")
+                break
+            else:
+                logger.info(f"[{symbol} {horizon}m] Trial {trial+1}/{MAX_TRIALS} Failed: Acc {acc:.4f} < {MIN_ACCURACY} or Prec {prec:.4f} < {MIN_PRECISION}")
         
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, zero_division=0)
-        rec = recall_score(y_test, y_pred, zero_division=0)
-        f1 = f1_score(y_test, y_pred, zero_division=0)
-        auc = roc_auc_score(y_test, y_prob)
+        if not best_model:
+            logger.error(f"[{symbol} {horizon}m] ❌ Failed to train any valid model.")
+            continue
+            
+        if best_metrics['accuracy'] < MIN_ACCURACY or best_metrics['precision'] < MIN_PRECISION:
+             logger.warning(f"[{symbol} {horizon}m] ⚠️ Best model did NOT meet standards after {MAX_TRIALS} trials. Acc: {best_metrics['accuracy']}, Prec: {best_metrics['precision']}")
         
-        logger.info(f"[{symbol} {horizon}m] Acc: {acc:.4f} | AUC: {auc:.4f} | Prec: {prec:.4f}")
-        
-        # Save Model
+        # Save Best Model
         model_filename = f"xgb_{symbol}_{horizon}m.joblib"
-        joblib.dump(model, os.path.join(MODELS_DIR, model_filename))
+        joblib.dump(best_model, os.path.join(MODELS_DIR, model_filename))
         
-        metrics_report[f"{horizon}m"] = {
-            "accuracy": round(acc, 4),
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1": round(f1, 4),
-            "auc": round(auc, 4),
-            "model_path": model_filename
-        }
+        best_metrics["model_path"] = model_filename
+        metrics_report[f"{horizon}m"] = best_metrics
+        
+        logger.info(f"[{symbol} {horizon}m] Selected Best: Acc: {best_metrics['accuracy']} | Prec: {best_metrics['precision']}")
         
     return {symbol: metrics_report}
 

@@ -390,7 +390,7 @@ export default function Home() {
 
     useEffect(() => {
         fetchStatus();
-        const interval = setInterval(fetchStatus, 3000); // Poll every 3 seconds for faster updates
+        const interval = setInterval(fetchStatus, 6000); // Poll every 6 seconds to reduce load
         return () => clearInterval(interval);
     }, []);
 
@@ -436,7 +436,7 @@ export default function Home() {
 
     useEffect(() => {
         fetchStrategySignals();
-        const interval = setInterval(fetchStrategySignals, 5000); // Poll every 5 seconds for faster signals
+        const interval = setInterval(fetchStrategySignals, 10000); // Poll every 10 seconds
         return () => clearInterval(interval);
     }, []);
     
@@ -647,7 +647,7 @@ export default function Home() {
             }
         };
 
-        const interval = setInterval(fetchData, 5000); // Poll every 5s for chart data updates
+        const interval = setInterval(fetchData, 10000); // Poll every 10s for chart data updates
         
         return () => {
             clearInterval(interval);
@@ -658,12 +658,12 @@ export default function Home() {
     // Monitor Helpers
     const trader = systemStatus?.trader;
     const isReal = systemStatus?.mode === 'real';
-    const pnlColor = (trader?.stats.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+    const pnlColor = (trader?.stats.total_pnl || 0) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]';
     const pnlSign = (trader?.stats.total_pnl || 0) >= 0 ? '+' : '';
-    const unrealizedPnlColor = (trader?.unrealized_pnl || 0) >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+    const unrealizedPnlColor = (trader?.unrealized_pnl || 0) >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]';
     const unrealizedPnlSign = (trader?.unrealized_pnl || 0) >= 0 ? '+' : '';
     const roi = trader && trader.initial_balance > 0 ? (trader.stats.total_pnl / trader.initial_balance) * 100 : 0;
-    const roiColor = roi >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+    const roiColor = roi >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]';
 
     // Calculate Total Position Value
     const totalPositionValue = trader?.positions 
@@ -671,16 +671,16 @@ export default function Home() {
         : 0;
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-[#0E1117] text-gray-900 dark:text-[#FAFAFA] font-sans flex flex-col">
+        <div className="min-h-screen bg-[#0E1117] text-[#FAFAFA] font-sans flex flex-col">
             {/* Header */}
-            <header className="border-b border-gray-200 dark:border-[#2B3139] px-4 py-3 md:px-6 md:py-4 flex justify-between items-center bg-white dark:bg-[#161A25]">
+            <header className="border-b border-[#2B3139] px-4 py-3 md:px-6 md:py-4 flex justify-between items-center bg-[#161A25]">
                 <div className="flex items-center gap-2 md:gap-3">
                     <div className="bg-[#F0B90B] p-1.5 rounded-lg">
                         <Activity className="w-4 h-4 md:w-5 md:h-5 text-black" />
                     </div>
                     <div>
                         <h1 className="text-lg md:text-xl font-bold tracking-tight">BTC Quant Pro</h1>
-                        <p className="text-[10px] md:text-xs text-gray-500 dark:text-[#848E9C]">AI-Powered Market Analysis</p>
+                        <p className="text-[10px] md:text-xs text-[#848E9C]">AI-Powered Market Analysis</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 md:gap-4">
@@ -692,8 +692,8 @@ export default function Home() {
                                 trader?.connection_status === 'Error' ? 'bg-[#F6465D]' : 'bg-[#F0B90B]'
                             }`}></div>
                             <span className={`text-xs font-medium ${
-                                trader?.connection_status === 'Connected' ? 'text-green-600 dark:text-[#0ECB81]' : 
-                                trader?.connection_status === 'Error' ? 'text-red-600 dark:text-[#F6465D]' : 'text-yellow-600 dark:text-[#F0B90B]'
+                                trader?.connection_status === 'Connected' ? 'text-[#0ECB81]' : 
+                                trader?.connection_status === 'Error' ? 'text-[#F6465D]' : 'text-[#F0B90B]'
                             }`}>
                                 {trader?.connection_status === 'Connected' ? '已连接' : 
                                  trader?.connection_status === 'Error' ? (monitorError && monitorError.includes('418') ? 'IP Banned (Resting)' : '连接错误') : 
@@ -701,7 +701,7 @@ export default function Home() {
                             </span>
                         </div>
                         {trader?.connection_error && (
-                            <div className="absolute top-full right-0 mt-2 p-2 bg-white dark:bg-[#1E2329] border border-red-900/50 rounded shadow-xl text-xs text-red-600 dark:text-[#F6465D] w-64 z-50 hidden group-hover:block">
+                            <div className="absolute top-full right-0 mt-2 p-2 bg-[#1E2329] border border-red-900/50 rounded shadow-xl text-xs text-[#F6465D] w-64 z-50 hidden group-hover:block">
                                 {trader.connection_error}
                             </div>
                         )}
@@ -709,55 +709,55 @@ export default function Home() {
 
                     <button 
                         onClick={() => setShowBacktest(true)}
-                        className="flex items-center gap-2 px-2 py-1.5 md:px-3 bg-gray-100 dark:bg-[#2B3139] hover:bg-gray-200 dark:hover:bg-[#363C45] text-gray-900 dark:text-[#EAECEF] text-xs md:text-sm font-medium rounded-lg transition-colors border border-gray-300 dark:border-[#474D57]"
+                        className="flex items-center gap-2 px-2 py-1.5 md:px-3 bg-[#2B3139] hover:bg-[#363C45] text-[#EAECEF] text-xs md:text-sm font-medium rounded-lg transition-colors border border-[#474D57]"
                     >
-                        <Beaker className="w-3 h-3 md:w-4 md:h-4 text-yellow-600 dark:text-[#F0B90B]" />
+                        <Beaker className="w-3 h-3 md:w-4 md:h-4 text-[#F0B90B]" />
                         <span className="hidden sm:inline">Backtest</span>
                     </button>
                     <button 
                         onClick={() => setShowPortfolio(true)}
-                        className="flex items-center gap-2 px-2 py-1.5 md:px-3 bg-gray-100 dark:bg-[#2B3139] hover:bg-gray-200 dark:hover:bg-[#363C45] text-gray-900 dark:text-[#EAECEF] text-xs md:text-sm font-medium rounded-lg transition-colors border border-gray-300 dark:border-[#474D57]"
+                        className="flex items-center gap-2 px-2 py-1.5 md:px-3 bg-[#2B3139] hover:bg-[#363C45] text-[#EAECEF] text-xs md:text-sm font-medium rounded-lg transition-colors border border-[#474D57]"
                     >
-                        <LayoutGrid className="w-3 h-3 md:w-4 md:h-4 text-yellow-600 dark:text-[#F0B90B]" />
+                        <LayoutGrid className="w-3 h-3 md:w-4 md:h-4 text-[#F0B90B]" />
                         <span className="hidden sm:inline">Portfolio</span>
                     </button>
-                    <a href="/data" className="hidden md:block text-sm text-gray-500 dark:text-[#848E9C] hover:text-yellow-600 dark:hover:text-yellow-600 dark:hover:text-yellow-600 dark:text-[#F0B90B] transition-colors">
+                    <a href="/data" className="hidden md:block text-sm text-[#848E9C] hover:text-[#F0B90B] transition-colors">
                         Data Info
                     </a>
-                    <a href="/models" className="hidden md:block text-sm text-gray-500 dark:text-[#848E9C] hover:text-yellow-600 dark:hover:text-yellow-600 dark:hover:text-yellow-600 dark:text-[#F0B90B] transition-colors">
+                    <a href="/models" className="hidden md:block text-sm text-[#848E9C] hover:text-[#F0B90B] transition-colors">
                         Model Info
                     </a>
                     <ThemeToggle />
-                    <div className="flex items-center gap-2 px-2 py-1 md:px-3 md:py-1.5 bg-white dark:bg-[#1E2329] rounded-full border border-gray-200 dark:border-[#2B3139]">
+                    <div className="flex items-center gap-2 px-2 py-1 md:px-3 md:py-1.5 bg-[#1E2329] rounded-full border border-[#2B3139]">
                         <span className="w-1.5 h-1.5 md:w-2 md:h-2 bg-[#0ECB81] rounded-full animate-pulse"></span>
-                        <span className="text-[10px] md:text-xs font-medium text-green-600 dark:text-[#0ECB81] whitespace-nowrap">
+                        <span className="text-[10px] md:text-xs font-medium text-[#0ECB81] whitespace-nowrap">
                             {isReal ? 'REAL TRADING' : 'PAPER TRADING'}
                         </span>
                     </div>
                 </div>
             </header>
 
-            <main className="flex-1 p-4 md:p-6 space-y-6 overflow-y-auto bg-gray-50 dark:bg-[#161A1E]">
+            <main className="flex-1 p-4 md:p-6 space-y-6 overflow-y-auto bg-[#161A1E]">
                 {/* Top Metrics Row */}
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
                     <div className="lg:col-span-4 h-[160px]">
                         <MonitoredTickers />
                     </div>
-                    <div className="lg:col-span-1 h-[160px] bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] shadow-sm hover:border-gray-300 dark:border-[#474D57] transition-colors flex flex-col justify-center">
-                        <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-3">Fear & Greed Index</p>
+                    <div className="lg:col-span-1 h-[160px] bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] shadow-sm hover:border-[#474D57] transition-colors flex flex-col justify-center">
+                        <p className="text-[#848E9C] text-xs font-medium uppercase mb-3">Fear & Greed Index</p>
                         <div className="flex flex-col gap-2">
                              <span className={`text-4xl font-bold ${
-                                fng ? (parseInt(fng.value) > 50 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]') : 'text-yellow-600 dark:text-[#F0B90B]'
+                                fng ? (parseInt(fng.value) > 50 ? 'text-[#0ECB81]' : 'text-[#F6465D]') : 'text-[#F0B90B]'
                             }`}>
                                 {fng ? fng.value : '---'}
                             </span>
                             <span className={`text-sm font-medium px-2 py-1 rounded w-fit ${
-                                fng ? (parseInt(fng.value) > 50 ? 'bg-green-50 dark:bg-[#0ECB81]/10 text-green-600 dark:text-[#0ECB81]' : 'bg-red-50 dark:bg-[#F6465D]/10 text-red-600 dark:text-[#F6465D]') : 'bg-yellow-50 dark:bg-[#F0B90B]/10 text-yellow-600 dark:text-[#F0B90B]'
+                                fng ? (parseInt(fng.value) > 50 ? 'bg-[#0ECB81]/10 text-[#0ECB81]' : 'bg-[#F6465D]/10 text-[#F6465D]') : 'bg-[#F0B90B]/10 text-[#F0B90B]'
                             }`}>
                                 {fng ? fng.value_classification : 'Loading...'}
                             </span>
                         </div>
-                        <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-4">
+                        <p className="text-[10px] text-[#848E9C] mt-4">
                             Next Update: {fng ? new Date(parseInt(fng.timestamp) * 1000 + 86400000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
                         </p>
                     </div>
@@ -771,7 +771,7 @@ export default function Home() {
                             <EquityHistoryChart data={equityHistory} />
                         </div>
                     ) : (
-                         <div className="h-[300px] bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] flex items-center justify-center text-gray-500 dark:text-[#848E9C]">
+                         <div className="h-[300px] bg-[#1E2329] rounded-xl border border-[#2B3139] flex items-center justify-center text-[#848E9C]">
                             Loading Equity History...
                         </div>
                     )}
@@ -785,11 +785,11 @@ export default function Home() {
                 {/* Strategy Monitor Section (New) */}
                 <div className="mt-6">
                     <div className="flex items-center justify-between mb-4 px-1">
-                        <h2 className="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
-                            <LayoutGrid className="w-5 h-5 text-yellow-600 dark:text-[#F0B90B]" />
+                        <h2 className="text-xl font-bold flex items-center gap-2 text-[#EAECEF]">
+                            <LayoutGrid className="w-5 h-5 text-[#F0B90B]" />
                             Dashboard Overview
                         </h2>
-                        <span className="text-xs text-gray-500 dark:text-[#848E9C] bg-white dark:bg-[#1E2329] px-2 py-1 rounded border border-gray-200 dark:border-[#2B3139]">
+                        <span className="text-xs text-[#848E9C] bg-[#1E2329] px-2 py-1 rounded border border-[#2B3139]">
                             Last Updated: {monitorLastUpdated ? monitorLastUpdated.toLocaleTimeString() : '--:--:--'}
                         </span>
                     </div>
@@ -797,88 +797,88 @@ export default function Home() {
                     {/* KPI Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
                         {/* Total Capital */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <DollarSign className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <DollarSign className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Total Equity</p>
-                            <h3 className="text-2xl font-bold font-mono tracking-tight text-gray-900 dark:text-[#EAECEF]">
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Total Equity</p>
+                            <h3 className="text-2xl font-bold font-mono tracking-tight text-[#EAECEF]">
                                 ${trader?.equity ? trader.equity.toFixed(2) : '---'}
                             </h3>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-1">
+                            <p className="text-xs text-[#848E9C] mt-1">
                                 Initial: ${trader?.initial_balance ? trader.initial_balance.toFixed(2) : '---'}
                             </p>
                         </div>
 
                         {/* Total Position Value (New) */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <Wallet className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <Wallet className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Total Position Value</p>
-                            <h3 className="text-2xl font-bold font-mono tracking-tight text-yellow-600 dark:text-[#F0B90B]">
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Total Position Value</p>
+                            <h3 className="text-2xl font-bold font-mono tracking-tight text-[#F0B90B]">
                                 ${totalPositionValue.toFixed(2)}
                             </h3>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-1">
+                            <p className="text-xs text-[#848E9C] mt-1">
                                 Active Positions Exposure
                             </p>
                         </div>
 
                         {/* Unrealized PnL (New) */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <Activity className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <Activity className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Unrealized PnL</p>
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Unrealized PnL</p>
                             <h3 className={`text-2xl font-bold font-mono tracking-tight ${unrealizedPnlColor}`}>
                                 {unrealizedPnlSign}${trader?.unrealized_pnl ? trader.unrealized_pnl.toFixed(2) : '0.00'}
                             </h3>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-1">
+                            <p className="text-xs text-[#848E9C] mt-1">
                                 Open Positions PnL
                             </p>
                         </div>
 
                         {/* Total PnL */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <TrendingUp className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <TrendingUp className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Total Realized PnL</p>
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Total Realized PnL</p>
                             <h3 className={`text-2xl font-bold font-mono tracking-tight ${pnlColor}`}>
                                 {pnlSign}${trader?.stats.total_pnl ? trader.stats.total_pnl.toFixed(2) : '---'}
                             </h3>
                             <p className={`text-xs mt-1 font-medium ${roiColor}`}>
                                 {pnlSign}{roi.toFixed(2)}% ROI
                             </p>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-0.5">
+                            <p className="text-xs text-[#848E9C] mt-0.5">
                                 Fees: ${trader?.stats.total_fees ? trader.stats.total_fees.toFixed(2) : '0.00'}
                             </p>
                         </div>
 
                         {/* Win Rate */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <CheckCircle2 className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <CheckCircle2 className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Win Rate (All Time)</p>
-                            <h3 className="text-2xl font-bold font-mono tracking-tight text-yellow-600 dark:text-[#F0B90B]">
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Win Rate (All Time)</p>
+                            <h3 className="text-2xl font-bold font-mono tracking-tight text-[#F0B90B]">
                                 {trader?.stats.win_rate !== undefined ? trader.stats.win_rate.toFixed(1) : '---'}%
                             </h3>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-1">
+                            <p className="text-xs text-[#848E9C] mt-1">
                                 {trader?.stats.total_trades || 0} Trades
                             </p>
                         </div>
 
                         {/* Open Orders (New) */}
-                        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
+                        <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden shadow-md hover:scale-[1.02] transition-transform duration-200">
                             <div className="absolute top-0 right-0 p-3 opacity-10">
-                                <List className="w-12 h-12 text-gray-900 dark:text-[#EAECEF]" />
+                                <List className="w-12 h-12 text-[#EAECEF]" />
                             </div>
-                            <p className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-2">Open Orders</p>
-                            <h3 className="text-2xl font-bold font-mono tracking-tight text-gray-900 dark:text-[#EAECEF]">
+                            <p className="text-[#848E9C] text-xs font-medium uppercase mb-2">Open Orders</p>
+                            <h3 className="text-2xl font-bold font-mono tracking-tight text-[#EAECEF]">
                                 {trader?.open_orders_count !== undefined ? trader.open_orders_count : 0}
                             </h3>
-                            <p className="text-xs text-gray-500 dark:text-[#848E9C] mt-1">
+                            <p className="text-xs text-[#848E9C] mt-1">
                                 Active / Algo
                             </p>
                         </div>
@@ -887,13 +887,13 @@ export default function Home() {
                     </div>
 
                     {/* Active Position Summary */}
-                    <div className="bg-white dark:bg-[#1E2329] p-4 rounded-xl border border-gray-200 dark:border-[#2B3139] relative overflow-hidden mb-6">
-                        <div className="text-gray-500 dark:text-[#848E9C] text-xs font-medium uppercase mb-4 flex items-center gap-3">
-                            <Activity className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
+                    <div className="bg-[#1E2329] p-4 rounded-xl border border-[#2B3139] relative overflow-hidden mb-6">
+                        <div className="text-[#848E9C] text-xs font-medium uppercase mb-4 flex items-center gap-3">
+                            <Activity className="w-4 h-4 text-[#F0B90B]" />
                             <span>Active Positions</span>
                             <span className="hidden md:flex items-center gap-2 ml-2 normal-case">
-                                <span className="text-[10px] text-gray-500 dark:text-[#848E9C]">Lev</span>
-                                <span className="text-[10px] font-mono text-gray-900 dark:text-[#EAECEF]">{leverageValue}x</span>
+                                <span className="text-[10px] text-[#848E9C]">Lev</span>
+                                <span className="text-[10px] font-mono text-[#EAECEF]">{leverageValue}x</span>
                                 <input
                                     type="range"
                                     min={1}
@@ -904,7 +904,7 @@ export default function Home() {
                                         setLevSource('user');
                                         setLeverageValue(Math.max(1, Math.min(10, parseInt(e.target.value || '1', 10) || 1)));
                                     }}
-                                    className="w-40 h-2 accent-yellow-600 dark:accent-[#F0B90B]"
+                                    className="w-40 h-2 accent-[#F0B90B]"
                                     aria-label="Leverage Limit"
                                 />
                                 <input
@@ -918,7 +918,7 @@ export default function Home() {
                                         setLevSource('user');
                                         setLeverageValue(clamped);
                                     }}
-                                    className="w-12 bg-gray-50 dark:bg-[#0E1117] border border-gray-200 dark:border-[#2B3139] rounded px-1 py-0.5 text-[10px] text-center text-gray-900 dark:text-[#EAECEF]"
+                                    className="w-12 bg-[#0E1117] border border-[#2B3139] rounded px-1 py-0.5 text-[10px] text-center text-[#EAECEF]"
                                     aria-label="Leverage Number Input"
                                 />
                                 <button
@@ -947,12 +947,12 @@ export default function Home() {
                                         }
                                     }}
                                     disabled={savingLev}
-                                    className={`px-2 py-0.5 rounded text-[10px] ${savingLev ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C]' : 'bg-[#474D57] hover:bg-[#59606D] text-white'}`}
+                                    className={`px-2 py-0.5 rounded text-[10px] ${savingLev ? 'bg-[#2B3139] text-[#848E9C]' : 'bg-[#474D57] hover:bg-[#59606D] text-white'}`}
                                     aria-label="Save Leverage"
                                 >
                                     {savingLev ? '...' : 'Save'}
                                 </button>
-                                {levMsg && <span className="text-[10px] text-gray-500 dark:text-[#848E9C]">{levMsg}</span>}
+                                {levMsg && <span className="text-[10px] text-[#848E9C]">{levMsg}</span>}
                             </span>
                         </div>
                         
@@ -961,24 +961,24 @@ export default function Home() {
                                 {Object.entries(trader.positions)
                                     .sort(([, a], [, b]) => b.unrealized_pnl - a.unrealized_pnl)
                                     .map(([symbol, pos]) => {
-                                    const posPnlColor = pos.unrealized_pnl >= 0 ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+                                    const posPnlColor = pos.unrealized_pnl >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]';
                                     const posPnlSign = pos.unrealized_pnl >= 0 ? '+' : '';
                                     const leverage = pos.leverage || 1;
                                     const roiVal = pos.pnl_pct; 
                                     const displaySymbol = symbol.replace(':USDT', '');
 
                                     return (
-                                        <div key={symbol} className="flex flex-col gap-2 bg-gray-100 dark:bg-gray-200 dark:bg-[#2B3139]/20 p-3 rounded-lg border border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50 shadow-sm hover:border-yellow-500/50 dark:hover:border-[#F0B90B]/50 transition-colors duration-200">
-                                            <div className="flex items-center justify-between border-b border-gray-200 dark:border-[#2B3139] pb-2">
+                                        <div key={symbol} className="flex flex-col gap-2 bg-[#2B3139]/20 p-3 rounded-lg border border-[#2B3139]/50 shadow-sm hover:border-[#F0B90B]/50 transition-colors duration-200">
+                                            <div className="flex items-center justify-between border-b border-[#2B3139] pb-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${pos.side === 'long' ? 'bg-green-100 dark:bg-[#0ECB81]/20 text-green-600 dark:text-[#0ECB81]' : 'bg-red-100 dark:bg-[#F6465D]/20 text-red-600 dark:text-[#F6465D]'}`}>
+                                                    <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${pos.side === 'long' ? 'bg-[#0ECB81]/20 text-[#0ECB81]' : 'bg-[#F6465D]/20 text-[#F6465D]'}`}>
                                                         {pos.side === 'long' ? 'LONG' : 'SHORT'}
                                                     </span>
-                                                    <span className="font-bold text-sm text-gray-900 dark:text-[#EAECEF]">{displaySymbol}</span>
-                                                    <span className="text-[10px] text-gray-500 dark:text-[#848E9C] bg-gray-100 dark:bg-[#2B3139] px-1 rounded">
+                                                    <span className="font-bold text-sm text-[#EAECEF]">{displaySymbol}</span>
+                                                    <span className="text-[10px] text-[#848E9C] bg-[#2B3139] px-1 rounded">
                                                         {leverage}X
                                                     </span>
-                                                    <span className="text-[10px] text-gray-900 dark:text-[#EAECEF] bg-gray-100 dark:bg-[#2B3139] px-1 rounded" title="Total Position Value">
+                                                    <span className="text-[10px] text-[#EAECEF] bg-[#2B3139] px-1 rounded" title="Total Position Value">
                                                         ${pos.position_value_usdt ? pos.position_value_usdt.toFixed(0) : '0'}
                                                     </span>
                                                 </div>
@@ -988,25 +988,25 @@ export default function Home() {
                                             </div>
                                             <div className="grid grid-cols-4 gap-2 text-[10px] mb-2">
                                                 <div>
-                                                    <p className="text-gray-500 dark:text-[#848E9C]">Entry</p>
-                                                    <p className="font-mono text-gray-900 dark:text-[#EAECEF]">{pos.entry_price.toFixed(2)}</p>
+                                                    <p className="text-[#848E9C]">Entry</p>
+                                                    <p className="font-mono text-[#EAECEF]">{pos.entry_price.toFixed(2)}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-gray-500 dark:text-[#848E9C]">Mark</p>
-                                                    <p className="font-mono text-gray-900 dark:text-[#EAECEF]">{pos.mark_price ? pos.mark_price.toFixed(2) : '-'}</p>
+                                                    <p className="text-[#848E9C]">Mark</p>
+                                                    <p className="font-mono text-[#EAECEF]">{pos.mark_price ? pos.mark_price.toFixed(2) : '-'}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-gray-500 dark:text-[#848E9C]">SL</p>
-                                                    <p className="font-mono text-red-600 dark:text-[#F6465D]">{pos.sl_price ? pos.sl_price.toFixed(2) : '-'}</p>
+                                                    <p className="text-[#848E9C]">SL</p>
+                                                    <p className="font-mono text-[#F6465D]">{pos.sl_price ? pos.sl_price.toFixed(2) : '-'}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-gray-500 dark:text-[#848E9C]">TP</p>
-                                                    <p className="font-mono text-green-600 dark:text-[#0ECB81]">{pos.tp_price ? pos.tp_price.toFixed(2) : '-'}</p>
+                                                    <p className="text-[#848E9C]">TP</p>
+                                                    <p className="font-mono text-[#0ECB81]">{pos.tp_price ? pos.tp_price.toFixed(2) : '-'}</p>
                                                 </div>
                                             </div>
-                                            <div className="text-[10px] border-t border-gray-200 dark:border-[#2B3139] pt-2 flex justify-between items-center">
-                                                <span className="text-gray-500 dark:text-[#848E9C]">Entry Time</span>
-                                                <span className="font-mono text-gray-900 dark:text-[#EAECEF]">
+                                            <div className="text-[10px] border-t border-[#2B3139] pt-2 flex justify-between items-center">
+                                                <span className="text-[#848E9C]">Entry Time</span>
+                                                <span className="font-mono text-[#EAECEF]">
                                                     {pos.entry_time 
                                                         ? new Date(pos.entry_time).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
                                                         : '-'}
@@ -1017,7 +1017,7 @@ export default function Home() {
                                 })}
                             </div>
                         ) : (
-                            <div className="flex items-center justify-center h-16 text-gray-500 dark:text-[#848E9C] gap-2">
+                            <div className="flex items-center justify-center h-16 text-[#848E9C] gap-2">
                                 <Shield className="w-5 h-5 opacity-50" />
                                 <span className="text-xs">No Active Position</span>
                             </div>
@@ -1027,16 +1027,16 @@ export default function Home() {
                     {/* Trade History & Strategy Logs & News Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Recent Trades */}
-                        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] overflow-hidden h-[400px] flex flex-col shadow-md">
-                            <div className="p-4 border-b border-gray-200 dark:border-[#2B3139] flex items-center justify-between bg-white dark:bg-[#1E2329]">
-                                <h2 className="font-semibold text-sm flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
-                                    <History className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
+                        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] overflow-hidden h-[400px] flex flex-col shadow-md">
+                            <div className="p-4 border-b border-[#2B3139] flex items-center justify-between bg-[#1E2329]">
+                                <h2 className="font-semibold text-sm flex items-center gap-2 text-[#EAECEF]">
+                                    <History className="w-4 h-4 text-[#F0B90B]" />
                                     Recent Trades (Closed)
                                 </h2>
                             </div>
                             <div className="overflow-y-auto flex-1">
                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-gray-100 dark:bg-gray-300 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
+                                    <thead className="bg-[#2B3139]/50 text-[#848E9C] sticky top-0">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Entry Time (CN)</th>
                                             <th className="px-3 py-2 font-medium">Exit Time (CN)</th>
@@ -1056,10 +1056,10 @@ export default function Home() {
                                                 if (!trade.realized_pnl || trade.realized_pnl === 0) return null;
                                                 
                                                 const isWin = (trade.realized_pnl || 0) > 0;
-                                                const pnlColor = isWin ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+                                                const pnlColor = isWin ? 'text-[#0ECB81]' : 'text-[#F6465D]';
                                                 // Use calculated position side if available, otherwise infer from exit side
                                                 const positionSide = trade.position_side || (trade.side === 'sell' ? 'LONG' : 'SHORT');
-                                                const sideColor = positionSide === 'LONG' ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
+                                                const sideColor = positionSide === 'LONG' ? 'text-[#0ECB81]' : 'text-[#F6465D]';
                                                 
                                                 // Calculate Duration
                                                 const entryTime = (trade as any).entry_time;
@@ -1072,17 +1072,17 @@ export default function Home() {
                                                 }
 
                                                 return (
-                                                    <tr key={trade.id} className="hover:bg-gray-100 dark:bg-[#2B3139]/30 transition-colors">
-                                                        <td className="px-3 py-2 font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                    <tr key={trade.id} className="hover:bg-[#2B3139]/30 transition-colors">
+                                                        <td className="px-3 py-2 font-mono text-[#EAECEF]">
                                                             {entryTime ? new Date(entryTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
                                                         </td>
-                                                        <td className="px-3 py-2 font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 font-mono text-[#EAECEF]">
                                                             {new Date(trade.datetime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                                         </td>
-                                                        <td className="px-3 py-2 font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 font-mono text-[#EAECEF]">
                                                             {durationDisplay}
                                                         </td>
-                                                        <td className="px-3 py-2 font-bold text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 font-bold text-[#EAECEF]">
                                                             {(trade.symbol || '-').replace(':USDT', '')}
                                                         </td>
                                                         <td className="px-3 py-2">
@@ -1090,10 +1090,10 @@ export default function Home() {
                                                                 {positionSide}
                                                             </span>
                                                         </td>
-                                                        <td className="px-3 py-2 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 text-right font-mono text-[#EAECEF]">
                                                             {trade.entry_price ? trade.entry_price.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 4}) : '-'}
                                                         </td>
-                                                        <td className="px-3 py-2 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 text-right font-mono text-[#EAECEF]">
                                                             {trade.exit_price ? trade.exit_price.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 4}) : trade.price.toLocaleString()}
                                                         </td>
                                                         <td className={`px-3 py-2 text-right font-mono ${pnlColor}`}>
@@ -1107,7 +1107,7 @@ export default function Home() {
                                             })
                                         ) : (
                                             <tr>
-                                                <td colSpan={9} className="px-3 py-8 text-center text-gray-500 dark:text-[#848E9C]">
+                                                <td colSpan={9} className="px-3 py-8 text-center text-[#848E9C]">
                                                     No closed trades yet
                                                 </td>
                                             </tr>
@@ -1118,21 +1118,21 @@ export default function Home() {
                         </div>
 
                         {/* Strategy Logs */}
-                        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] overflow-hidden h-[400px] flex flex-col shadow-md">
-                            <div className="p-4 border-b border-gray-200 dark:border-[#2B3139] flex items-center justify-between bg-white dark:bg-[#1E2329]">
-                                <h3 className="font-semibold text-sm flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
-                                    <Clock className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
+                        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] overflow-hidden h-[400px] flex flex-col shadow-md">
+                            <div className="p-4 border-b border-[#2B3139] flex items-center justify-between bg-[#1E2329]">
+                                <h3 className="font-semibold text-sm flex items-center gap-2 text-[#EAECEF]">
+                                    <Clock className="w-4 h-4 text-[#F0B90B]" />
                                     Strategy Signals (All Coins)
                                 </h3>
                                 <div className="flex gap-2">
                                     <input 
                                         type="text" 
                                         placeholder="Search Symbol" 
-                                        className="bg-gray-100 dark:bg-[#2B3139] text-xs text-gray-900 dark:text-[#EAECEF] px-2 py-1 rounded border border-gray-300 dark:border-[#474D57] focus:outline-none focus:border-[#F0B90B] w-24"
+                                        className="bg-[#2B3139] text-xs text-[#EAECEF] px-2 py-1 rounded border border-[#474D57] focus:outline-none focus:border-[#F0B90B] w-24"
                                         onChange={(e) => setSignalSearch(e.target.value)}
                                     />
                                     <select 
-                                        className="bg-gray-100 dark:bg-[#2B3139] text-xs text-gray-900 dark:text-[#EAECEF] px-2 py-1 rounded border border-gray-300 dark:border-[#474D57] focus:outline-none focus:border-[#F0B90B]"
+                                        className="bg-[#2B3139] text-xs text-[#EAECEF] px-2 py-1 rounded border border-[#474D57] focus:outline-none focus:border-[#F0B90B]"
                                         onChange={(e) => setSignalFilter(e.target.value)}
                                     >
                                         <option value="ALL">All Signals</option>
@@ -1145,7 +1145,7 @@ export default function Home() {
                             </div>
                             <div className="overflow-y-auto flex-1">
                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-gray-100 dark:bg-gray-300 dark:bg-[#2B3139]/50 text-gray-500 dark:text-[#848E9C] sticky top-0">
+                                    <thead className="bg-[#2B3139]/50 text-[#848E9C] sticky top-0">
                                         <tr>
                                             <th className="px-3 py-2 font-medium">Symbol</th>
                                             <th className="px-3 py-2 font-medium">Signal</th>
@@ -1160,26 +1160,26 @@ export default function Home() {
                                     <tbody className="divide-y divide-[#2B3139]">
                                         {signalsError ? (
                                             <tr>
-                                                <td colSpan={8} className="px-3 py-8 text-center text-red-600 dark:text-[#F6465D]">
+                                                <td colSpan={8} className="px-3 py-8 text-center text-[#F6465D]">
                                                     {signalsError} <br/>
-                                                    <button onClick={() => fetchStrategySignals()} className="mt-2 px-3 py-1 bg-gray-100 dark:bg-[#2B3139] rounded text-xs hover:bg-gray-200 dark:hover:bg-[#363C45]">Retry</button>
+                                                    <button onClick={() => fetchStrategySignals()} className="mt-2 px-3 py-1 bg-[#2B3139] rounded text-xs hover:bg-[#363C45]">Retry</button>
                                                 </td>
                                             </tr>
                                         ) : signalsLoading ? (
                                             <tr>
-                                                <td colSpan={8} className="px-3 py-8 text-center text-gray-500 dark:text-[#848E9C]">
+                                                <td colSpan={8} className="px-3 py-8 text-center text-[#848E9C]">
                                                     Loading signals...
                                                 </td>
                                             </tr>
                                         ) : strategySignals.length === 0 ? (
                                             <tr>
-                                                <td colSpan={8} className="px-3 py-8 text-center text-gray-500 dark:text-[#848E9C]">
+                                                <td colSpan={8} className="px-3 py-8 text-center text-[#848E9C]">
                                                     No signals found
                                                 </td>
                                             </tr>
                                         ) : filteredSignals.length === 0 ? (
                                             <tr>
-                                                <td colSpan={8} className="px-3 py-8 text-center text-gray-500 dark:text-[#848E9C]">No matching signals</td>
+                                                <td colSpan={8} className="px-3 py-8 text-center text-[#848E9C]">No matching signals</td>
                                             </tr>
                                         ) : (
                                             filteredSignals.map((signal, index) => {
@@ -1188,37 +1188,37 @@ export default function Home() {
                                                 const indicators = signal.strategy_result?.indicators;
                                                 
                                                 return (
-                                                    <tr key={`${signal.symbol}-${index}`} className="hover:bg-gray-100 dark:bg-[#2B3139]/30 border-b border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50">
-                                                        <td className="px-3 py-2 font-bold text-gray-900 dark:text-[#EAECEF]">
+                                                    <tr key={`${signal.symbol}-${index}`} className="hover:bg-[#2B3139]/30 border-b border-[#2B3139]/50">
+                                                        <td className="px-3 py-2 font-bold text-[#EAECEF]">
                                                             {signal.symbol}
-                                                            <span className="block text-[10px] text-gray-500 dark:text-[#848E9C] font-mono">
+                                                            <span className="block text-[10px] text-[#848E9C] font-mono">
                                                                 {signal.timestamp.split('T')[1]?.split('.')[0] || (signal.timestamp.includes(' ') ? signal.timestamp.split(' ')[1] : signal.timestamp)}
                                                             </span>
                                                         </td>
                                                         <td className="px-3 py-2">
-                                                            <div className={`flex items-center gap-1 ${isUp ? 'text-green-600 dark:text-[#0ECB81]' : (isDown ? 'text-red-600 dark:text-[#F6465D]' : 'text-gray-500 dark:text-[#848E9C]')}`}>
+                                                            <div className={`flex items-center gap-1 ${isUp ? 'text-[#0ECB81]' : (isDown ? 'text-[#F6465D]' : 'text-[#848E9C]')}`}>
                                                                 {isUp ? <ArrowUp className="w-3 h-3" /> : (isDown ? <ArrowDown className="w-3 h-3" /> : <Activity className="w-3 h-3" />)}
                                                                 <span className="font-bold">{signal.signal}</span>
                                                                 {signal.confidence === 'HIGH' && <span className="ml-1 text-[8px] bg-[#F0B90B] text-black px-1 rounded">HC</span>}
                                                             </div>
                                                         </td>
-                                                        <td className="px-3 py-2 font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 font-mono text-[#EAECEF]">
                                                             {(signal.avg_probability * 100).toFixed(1)}%
                                                         </td>
-                                                        <td className={`px-3 py-2 font-mono ${indicators?.rsi && (indicators.rsi > 70 || indicators.rsi < 30) ? 'text-yellow-600 dark:text-[#F0B90B]' : 'text-gray-900 dark:text-[#EAECEF]'}`}>
+                                                        <td className={`px-3 py-2 font-mono ${indicators?.rsi && (indicators.rsi > 70 || indicators.rsi < 30) ? 'text-[#F0B90B]' : 'text-[#EAECEF]'}`}>
                                                             {indicators?.rsi ? indicators.rsi.toFixed(1) : '-'}
                                                         </td>
-                                                        <td className={`px-3 py-2 font-mono ${indicators?.adx && indicators.adx > 25 ? 'text-yellow-600 dark:text-[#F0B90B]' : 'text-gray-500 dark:text-[#848E9C]'}`}>
+                                                        <td className={`px-3 py-2 font-mono ${indicators?.adx && indicators.adx > 25 ? 'text-[#F0B90B]' : 'text-[#848E9C]'}`}>
                                                             {indicators?.adx ? indicators.adx.toFixed(1) : '-'}
                                                         </td>
-                                                        <td className={`px-3 py-2 font-mono ${indicators?.macd_hist && indicators.macd_hist > 0 ? 'text-green-600 dark:text-[#0ECB81]' : (indicators?.macd_hist && indicators.macd_hist < 0 ? 'text-red-600 dark:text-[#F6465D]' : 'text-gray-900 dark:text-[#EAECEF]')}`}>
+                                                        <td className={`px-3 py-2 font-mono ${indicators?.macd_hist && indicators.macd_hist > 0 ? 'text-[#0ECB81]' : (indicators?.macd_hist && indicators.macd_hist < 0 ? 'text-[#F6465D]' : 'text-[#EAECEF]')}`}>
                                                             {indicators?.macd_hist ? indicators.macd_hist.toFixed(2) : '-'}
                                                         </td>
-                                                        <td className="px-3 py-2 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
+                                                        <td className="px-3 py-2 text-right font-mono text-[#EAECEF]">
                                                             {signal.price.toLocaleString()}
-                                                            {indicators?.ema && <span className="text-[10px] text-gray-500 dark:text-[#848E9C] block">EMA:{indicators.ema.toFixed(0)}</span>}
+                                                            {indicators?.ema && <span className="text-[10px] text-[#848E9C] block">EMA:{indicators.ema.toFixed(0)}</span>}
                                                         </td>
-                                                        <td className="px-3 py-2 text-xs text-gray-500 dark:text-[#848E9C] max-w-[200px] truncate" title={signal.strategy_result?.reason}>
+                                                        <td className="px-3 py-2 text-xs text-[#848E9C] max-w-[200px] truncate" title={signal.strategy_result?.reason}>
                                                             {signal.strategy_result?.reason || '-'}
                                                         </td>
                                                     </tr>

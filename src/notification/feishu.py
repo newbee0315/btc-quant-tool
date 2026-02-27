@@ -183,6 +183,71 @@ class FeishuBot:
                 else:
                     time.sleep(2) # Wait before retry
 
+    def send_markdown(self, text: str, title: str = None):
+        """Send markdown message using Interactive Card"""
+        if not self.webhook_url:
+            self._log_message("markdown", text, False, "No webhook URL configured")
+            return
+        
+        headers = {'Content-Type': 'application/json'}
+        
+        # Ensure "Test" keyword if needed
+        safe_title = title
+        safe_text = text
+        
+        has_test = ("Test" in (title or "")) or ("Test" in text)
+        if not has_test:
+            if safe_title:
+                safe_title = f"Test: {safe_title}"
+            else:
+                safe_text = f"Test: {safe_text}"
+        
+        # Construct Interactive Card
+        card = {
+            "config": {
+                "wide_screen_mode": True
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": safe_text
+                    }
+                }
+            ]
+        }
+        
+        if safe_title:
+            card["header"] = {
+                "title": {
+                    "tag": "plain_text",
+                    "content": safe_title
+                },
+                "template": "blue"
+            }
+            
+        data = {
+            "msg_type": "interactive",
+            "card": card
+        }
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Sending to Feishu (Attempt {attempt+1}/{max_retries}): {self.webhook_url[:10]}... Payload: {json.dumps(data)}")
+                response = requests.post(self.webhook_url, headers=headers, data=json.dumps(data), timeout=10)
+                logger.info(f"Feishu Response: {response.status_code} - {response.text}")
+                response.raise_for_status()
+                self._log_message("markdown", text, True)
+                return # Success
+            except Exception as e:
+                logger.error(f"Feishu send markdown error (Attempt {attempt+1}): {e}")
+                if attempt == max_retries - 1:
+                    self._log_message("markdown", text, False, str(e))
+                else:
+                    time.sleep(2) # Wait before retry
+
     def send_trade_card(self, action: str, symbol: str, price: float, amount: float, pnl: float = None, reason: str = "", prob: float = None, sl: float = None, tp: float = None):
         """
         [DISABLED] Send trade card message.

@@ -50,28 +50,28 @@ export const NewsCard: React.FC = () => {
 
     if (loading && news.length === 0) {
         return (
-            <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] h-full flex items-center justify-center shadow-md">
+            <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] h-full flex items-center justify-center shadow-md">
                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F0B90B]"></div>
             </div>
         );
     }
 
     return (
-        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] flex flex-col h-full shadow-md">
-            <div className="p-4 border-b border-[#2B3139] flex items-center justify-between bg-[#1E2329]">
-                <h3 className="font-semibold text-sm flex items-center gap-2 text-[#EAECEF]">
-                    <Newspaper className="w-4 h-4 text-[#F0B90B]" />
+        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] flex flex-col h-full shadow-md">
+            <div className="p-4 border-b border-gray-200 dark:border-[#2B3139] flex items-center justify-between bg-white dark:bg-[#1E2329]">
+                <h3 className="font-semibold text-sm flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
+                    <Newspaper className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
                     Crypto News
                 </h3>
-                <span className="text-[10px] text-[#848E9C]">Source: CryptoCompare (Translated)</span>
+                <span className="text-[10px] text-gray-500 dark:text-[#848E9C]">Source: CryptoCompare (Translated)</span>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
                 {news.length === 0 && !loading ? (
-                    <div className="text-[#848E9C] text-center py-8 text-xs">No news available</div>
+                    <div className="text-gray-500 dark:text-[#848E9C] text-center py-8 text-xs">No news available</div>
                 ) : (
                     news.map((item) => (
-                        <div key={item.id} className="group bg-[#2B3139]/20 hover:bg-[#2B3139]/40 border border-[#2B3139]/50 rounded-lg p-3 transition-colors">
+                        <div key={item.id} className="group bg-gray-100 dark:bg-gray-200 dark:bg-[#2B3139]/20 hover:bg-gray-100 dark:bg-[#2B3139]/40 border border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50 rounded-lg p-3 transition-colors">
                             <a 
                                 href={item.url} 
                                 target="_blank" 
@@ -80,11 +80,11 @@ export const NewsCard: React.FC = () => {
                             >
                                 <div className="flex justify-between items-start gap-3">
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="text-sm font-medium text-[#EAECEF] group-hover:text-[#F0B90B] transition-colors line-clamp-2 leading-snug mb-1.5">
+                                        <h4 className="text-sm font-medium text-gray-900 dark:text-[#EAECEF] group-hover:text-yellow-600 dark:text-[#F0B90B] transition-colors line-clamp-2 leading-snug mb-1.5">
                                             {item.title}
                                         </h4>
-                                        <div className="flex items-center flex-wrap gap-2 text-[10px] text-[#848E9C]">
-                                            <span className="flex items-center gap-1 bg-[#2B3139] px-1.5 py-0.5 rounded">
+                                        <div className="flex items-center flex-wrap gap-2 text-[10px] text-gray-500 dark:text-[#848E9C]">
+                                            <span className="flex items-center gap-1 bg-gray-100 dark:bg-[#2B3139] px-1.5 py-0.5 rounded">
                                                 <Clock className="w-3 h-3" />
                                                 {new Date(item.published_on * 1000).toLocaleString('zh-CN', { 
                                                     month: '2-digit', 
@@ -93,18 +93,18 @@ export const NewsCard: React.FC = () => {
                                                     minute: '2-digit' 
                                                 })}
                                             </span>
-                                            <span className="bg-[#2B3139] px-1.5 py-0.5 rounded uppercase truncate max-w-[100px]">
+                                            <span className="bg-gray-100 dark:bg-[#2B3139] px-1.5 py-0.5 rounded uppercase truncate max-w-[100px]">
                                                 {item.source_info?.name || item.source}
                                             </span>
                                             {item.categories && (
-                                                <span className="bg-[#2B3139] px-1.5 py-0.5 rounded truncate max-w-[120px] text-[#EAECEF]/70">
+                                                <span className="bg-gray-100 dark:bg-[#2B3139] px-1.5 py-0.5 rounded truncate max-w-[120px] text-gray-900 dark:text-[#EAECEF]/70">
                                                     {item.categories.split('|')[0]}
                                                 </span>
                                             )}
                                         </div>
                                     </div>
                                     {item.imageurl && (
-                                        <div className="w-16 h-16 rounded overflow-hidden flex-shrink-0 border border-[#2B3139]/50 bg-[#161A1E]">
+                                        <div className="w-16 h-16 rounded overflow-hidden flex-shrink-0 border border-gray-200 dark:border-gray-300 dark:border-[#2B3139]/50 bg-gray-50 dark:bg-[#161A1E]">
                                             <img 
                                                 src={item.imageurl} 
                                                 alt="" 

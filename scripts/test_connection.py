@@ -30,8 +30,8 @@ def test_connection():
                 'defaultType': 'future',
             },
             'proxies': {
-                'http': 'http://127.0.0.1:1080',
-                'https': 'http://127.0.0.1:1080',
+                'http': 'http://127.0.0.1:33210',
+                'https': 'http://127.0.0.1:33210',
             },
             'enableRateLimit': True,
         })

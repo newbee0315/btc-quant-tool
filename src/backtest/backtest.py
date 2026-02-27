@@ -136,6 +136,10 @@ class SmartBacktester:
         # Set threshold
         self.strategy.ml_threshold = threshold
         
+        # Risk Management Settings
+        risk_per_trade = 0.02 # 2% risk per trade
+        max_position_pct = 0.5 # Max 50% of account per trade (Safety cap)
+
         logger.info("Running simulation loop...")
         
         for i in range(1, len(df)):
@@ -227,13 +231,23 @@ class SmartBacktester:
                      if side == 'long': tp_price = current_price * (1 + take_profit)
                      else: tp_price = current_price * (1 - take_profit)
                 
-                # Calculate Position Size
-                # Strategy suggests 'position_size' (in coins) based on full capital
-                # But we need to double check margin
+                # Calculate Position Size (Risk-Based Sizing)
+                risk_amount = balance * risk_per_trade
+                dist_to_sl = 0.05 # Default 5% if no SL
                 
-                # Let's use 98% of balance as margin (Full Mode)
-                margin_to_use = balance * 0.98
-                position_value = margin_to_use * leverage
+                if sl_price:
+                    dist_to_sl = abs(current_price - sl_price) / current_price
+                    if dist_to_sl == 0: dist_to_sl = 0.005 # Minimal distance
+                
+                # Position Value based on risk
+                position_value = risk_amount / dist_to_sl
+                
+                # Cap position value based on account size and leverage (Safety)
+                max_allowed_value = balance * leverage * max_position_pct
+                position_value = min(position_value, max_allowed_value)
+                
+                # Calculate margin required
+                margin_to_use = position_value / leverage
                 amount = position_value / current_price
                 
                 # Fee

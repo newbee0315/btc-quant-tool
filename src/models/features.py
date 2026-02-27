@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import requests
-import os
-from datetime import datetime
 import logging
 
 # Configure logging
@@ -241,6 +239,30 @@ class FeatureEngineer:
         df['oi_ma_20'] = df['oi'].rolling(window=20).mean()
         # OI vs Price (Divergence?)
         df['oi_price_corr'] = df['oi'].rolling(20).corr(df['close'])
+        
+        # --- 20. Lagged Features for Key Indicators (NEW) ---
+        # Capture the rate of change of indicators
+        new_features = {}
+        for col in ['rsi_14', 'macd', 'volume_ratio', 'bb_position', 'atr_rel']:
+            if col in df.columns:
+                for lag in [1, 3, 5]:
+                    new_features[f'{col}_lag_{lag}'] = df[col].shift(lag)
+        
+        # --- 21. Time Features (Cyclical) (NEW) ---
+        # Crypto trades 24/7, so Hour and Day of Week are useful
+        if 'datetime' in df.columns:
+            hour = df['datetime'].dt.hour
+            dayofweek = df['datetime'].dt.dayofweek
+            
+            # Cyclical encoding
+            new_features['hour_sin'] = np.sin(2 * np.pi * hour / 24)
+            new_features['hour_cos'] = np.cos(2 * np.pi * hour / 24)
+            new_features['day_sin'] = np.sin(2 * np.pi * dayofweek / 7)
+            new_features['day_cos'] = np.cos(2 * np.pi * dayofweek / 7)
+            
+        if new_features:
+            new_features_df = pd.DataFrame(new_features, index=df.index)
+            df = pd.concat([df, new_features_df], axis=1)
         
         # Cleanup
         df = df.replace([np.inf, -np.inf], np.nan)

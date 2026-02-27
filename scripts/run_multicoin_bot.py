@@ -42,20 +42,29 @@ SYMBOL_MAP = {
     'BNBUSDT': 'BNB/USDT:USDT',
     'DOGEUSDT': 'DOGE/USDT:USDT',
     'XRPUSDT': 'XRP/USDT:USDT',
-    'PEPEUSDT': 'PEPE/USDT:USDT',
+    'PEPEUSDT': '1000PEPE/USDT:USDT',
     'AVAXUSDT': 'AVAX/USDT:USDT',
     'LINKUSDT': 'LINK/USDT:USDT',
     'ADAUSDT': 'ADA/USDT:USDT',
     'TRXUSDT': 'TRX/USDT:USDT',
     'LDOUSDT': 'LDO/USDT:USDT',
     'BCHUSDT': 'BCH/USDT:USDT',
-    'OPNUSDT': 'OPN/USDT:USDT'
+    'OPUSDT': 'OP/USDT:USDT'
 }
-
-PROXY_URL = os.getenv("PROXY_URL", "http://127.0.0.1:33210")
 
 def main():
     load_dotenv()
+    
+    # Proxy Configuration
+    # Priority: 1. Environment Variable (if set) 2. Default Local Proxy
+    # To disable proxy (e.g. on cloud), set PROXY_URL="" in .env
+    proxy_url = os.getenv("PROXY_URL")
+    if proxy_url is None:
+        proxy_url = "http://127.0.0.1:33210" # Default for local dev
+    elif proxy_url == "":
+        proxy_url = None # Explicitly disabled via empty string
+    
+    logger.info(f"Proxy Configuration: {'Enabled (' + proxy_url + ')' if proxy_url else 'Disabled (Direct Connection)'}")
     
     lock_path = "/tmp/btc_quant_multicoin.lock"
     try:
@@ -88,7 +97,7 @@ def main():
         logger.info(f"[{current_idx}/{total_coins}] Initializing Trader for {clean_sym} ({ccxt_sym})...")
         try:
             # Disable trader notifications per user request (Only Hourly Report allowed)
-            trader = RealTrader(symbol=ccxt_sym, notifier=None, proxy_url=PROXY_URL)
+            trader = RealTrader(symbol=ccxt_sym, notifier=None, proxy_url=proxy_url)
             if trader.active:
                 trader.start() # Start to trigger repair_orders and other startup logic
                 traders[clean_sym] = trader
@@ -109,10 +118,15 @@ def main():
         
     # Initialize Portfolio Manager
     # Pass clean symbols keys and proxy
-    pm = PortfolioManager(active_symbols=list(SYMBOL_MAP.keys()), proxy_url=PROXY_URL)
+    pm = PortfolioManager(active_symbols=list(SYMBOL_MAP.keys()), proxy_url=proxy_url)
     
     # Collect all CCXT symbols for consolidated history fetching
     all_ccxt_symbols = list(SYMBOL_MAP.values())
+    
+    # CRITICAL: Update monitored_symbols for ALL traders so they share the same global history view
+    # This ensures check_risk_limit (Daily Loss) calculates TOTAL PnL, not just per-symbol PnL.
+    for t in traders.values():
+        t.monitored_symbols = all_ccxt_symbols
     
     logger.info("Bot initialized. Entering main loop...")
     
@@ -124,6 +138,7 @@ def main():
             logger.info("--- Scanning Market ---")
             # Get ALL results for frontend display
             all_results = pm.scan_market(return_all=True)
+            market_analysis_map = {r['symbol']: r for r in all_results}
             
             # Filter opportunities for trading
             opportunities = [r for r in all_results if r['signal'] in ['LONG', 'SHORT']]
@@ -138,36 +153,36 @@ def main():
                 logger.error(f"Failed to save strategy signals: {e}")
 
             
-            # --- AGGRESSIVE MODE: Scan Leaderboard ---
-            try:
-                # Find top movers NOT in our active list
-                lb_candidates = pm.scan_leaderboard(limit=5) 
+            # --- AGGRESSIVE MODE: Scan Leaderboard (DISABLED for 14-Coin Focus) ---
+            # try:
+            #     # Find top movers NOT in our active list
+            #     lb_candidates = pm.scan_leaderboard(limit=5) 
                 
-                for cand in lb_candidates:
-                    sym = cand['symbol']
-                    # logger.info(f"Checking Leaderboard: {sym} ({cand['change']:.2f}%)")
+            #     for cand in lb_candidates:
+            #         sym = cand['symbol']
+            #         # logger.info(f"Checking Leaderboard: {sym} ({cand['change']:.2f}%)")
                     
-                    # Analyze using Technicals Only (Aggressive)
-                    opp = pm.analyze_technical_only(sym)
+            #         # Analyze using Technicals Only (Aggressive)
+            #         opp = pm.analyze_technical_only(sym)
                     
-                    if opp:
-                        logger.info(f"🔥 AGGRESSIVE LEADERBOARD SIGNAL: {sym} {opp['signal']} (Conf: {opp['avg_probability']})")
+            #         if opp:
+            #             logger.info(f"🔥 AGGRESSIVE LEADERBOARD SIGNAL: {sym} {opp['signal']} (Conf: {opp['avg_probability']})")
                         
-                        # Add to opportunities
-                        opportunities.append(opp)
+            #             # Add to opportunities
+            #             opportunities.append(opp)
                         
-                        # Dynamically Initialize Trader if needed
-                        if sym not in traders:
-                            ccxt_sym = cand['ccxt_symbol']
-                            logger.info(f"Initializing Dynamic Trader for {sym}...")
-                            try:
-                                new_trader = RealTrader(symbol=ccxt_sym, notifier=None, proxy_url=PROXY_URL)
-                                traders[sym] = new_trader
-                                logger.info(f"Dynamic Trader for {sym} ready.")
-                            except Exception as e:
-                                logger.error(f"Failed to init dynamic trader for {sym}: {e}")
-            except Exception as e:
-                logger.error(f"Aggressive scan failed: {e}")
+            #             # Dynamically Initialize Trader if needed
+            #             if sym not in traders:
+            #                 ccxt_sym = cand['ccxt_symbol']
+            #                 logger.info(f"Initializing Dynamic Trader for {sym}...")
+            #                 try:
+            #                     new_trader = RealTrader(symbol=ccxt_sym, notifier=None, proxy_url=proxy_url)
+            #                     traders[sym] = new_trader
+            #                     logger.info(f"Dynamic Trader for {sym} ready.")
+            #                 except Exception as e:
+            #                     logger.error(f"Failed to init dynamic trader for {sym}: {e}")
+            # except Exception as e:
+            #     logger.error(f"Aggressive scan failed: {e}")
             # -----------------------------------------
             
             # Log top opportunities
@@ -218,20 +233,49 @@ def main():
                                 else:
                                     price_change_pct = (entry_price - mark_price) / entry_price
                                 
-                                # Threshold 3% Profit
-                                if price_change_pct >= 0.03:
-                                    position_value = float(pos_data.get('position_value_usdt', amount * mark_price))
-                                    equity_ratio = position_value / current_total_equity if current_total_equity > 0 else 0
+                                # Check for CZSC Reversal Signals
+                                market_res = market_analysis_map.get(clean_sym)
+                                czsc_exit_signal = False
+                                czsc_details = ""
+                                
+                                if market_res:
+                                    strat_res = market_res.get('strategy_result', {})
+                                    indicators = strat_res.get('indicators', {})
+                                    czsc_details = indicators.get('czsc_details', "")
                                     
-                                    # If size > 12% equity, implies full position (target 15%)
-                                    if equity_ratio > 0.12:
-                                        logger.info(f"💰 [Partial TP] {clean_sym} Profit {price_change_pct*100:.2f}% >= 3%. Size Ratio: {equity_ratio*100:.1f}%. Closing 50%...")
-                                        
-                                        close_amount = amount * 0.5
-                                        close_amount = float(trader.exchange.amount_to_precision(trader.symbol, close_amount))
-                                        
-                                        if close_amount > 0:
-                                            trader.close_partial(close_amount)
+                                    if side == 'long':
+                                        if "顶背驰" in czsc_details or "卖" in czsc_details:
+                                            czsc_exit_signal = True
+                                    elif side == 'short':
+                                        if "底背驰" in czsc_details or "买" in czsc_details:
+                                            czsc_exit_signal = True
+                                
+                                # Threshold Logic
+                                should_close = False
+                                close_reason = ""
+                                
+                                # 1. Hard Profit Target (3%)
+                                if price_change_pct >= 0.03:
+                                    should_close = True
+                                    close_reason = f"Profit {price_change_pct*100:.2f}% >= 3%"
+                                
+                                # 2. CZSC Reversal (Profit > 0.5%)
+                                elif price_change_pct >= 0.005 and czsc_exit_signal:
+                                    should_close = True
+                                    close_reason = f"Profit {price_change_pct*100:.2f}% > 0.5% & CZSC Reversal: {czsc_details}"
+
+                                if should_close:
+                                    # Execute Partial TP (50%)
+                                    # We remove the size_threshold check to ensure we secure profits on ALL winning trades
+                                    # as per strategy "Partial TP (50% at 3% profit)".
+                                    
+                                    logger.info(f"💰 [Partial TP] {clean_sym} {close_reason}. Closing 50% to secure profit...")
+                                    
+                                    close_amount = amount * 0.5
+                                    close_amount = float(trader.exchange.amount_to_precision(trader.symbol, close_amount))
+                                    
+                                    if close_amount > 0:
+                                        trader.close_partial(close_amount)
 
                     except Exception as e:
                         logger.error(f"Error in Partial TP Logic: {e}")
@@ -297,6 +341,28 @@ def main():
                          is_new_position = False
                          break
                 
+                # --- Trailing Stop & Position Management for Existing Positions ---
+                if not is_new_position:
+                    try:
+                        current_price = opp.get('price')
+                        if current_price:
+                            cfg = pm.config_manager.get_config()
+                            # Use configured trailing parameters or defaults
+                            trailing_trigger = float(cfg.get('trailing_stop_trigger_pct', 0.01))
+                            trailing_lock = float(cfg.get('trailing_stop_lock_pct', 0.02))
+                            
+                            logger.info(f"🛡️ Managing position for {symbol}: Price={current_price}, Signal={trade_signal}")
+                            trader.manage_position(
+                                current_price=float(current_price), 
+                                signal=trade_signal, 
+                                symbol=symbol,
+                                trailing_trigger_pct=trailing_trigger,
+                                trailing_lock_pct=trailing_lock
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to manage position for {symbol}: {e}")
+                # ----------------------------------------------------------------
+
                 if is_new_position and trade_signal != 0:
                     same_side_clean = []
                     for pos_sym, pos_data in all_active_positions.items():
@@ -343,66 +409,80 @@ def main():
                     total_equity = 100.0 # Fallback
 
                 # Calculate planned size
-                # Strategy: 15% of Equity per trade (Compounding)
-                # Config 'risk_per_trade' is now 0.15 (15%)
-                cfg = pm.config_manager.get_config()
-                position_pct = float(cfg.get('risk_per_trade', 0.15))
-                if position_pct < 0.05: position_pct = 0.15 # Minimum 15% if config is old
+                # Strategy: Use PortfolioManager Safe Calculation
                 
-                planned_notional = total_equity * position_pct
+                # Extract Confidence for Leverage Check
+                ml_prob = opp.get('avg_probability', 0.5)
                 
-                # Minimum absolute size (Binance min is usually 5-10U)
-                if planned_notional < 20.0: planned_notional = 20.0
+                # Convert ML Prob to Directional Confidence (Win Rate)
+                # If Signal is LONG, Conf = Prob
+                # If Signal is SHORT, Conf = 1 - Prob
+                effective_confidence = ml_prob
+                if signal_str == "SHORT":
+                    effective_confidence = 1.0 - ml_prob
                 
+                # Extract Market Data for Kelly Sizing
+                indicators = strat_res.get('indicators', {})
+                atr_val = float(indicators.get('atr', 0.0))
+                market_mode = trade_params.get('market_mode', 'normal')
+                current_price = float(opp.get('price', 0.0))
+                
+                # Check Global Leverage Limits First
+                is_allowed, reason = pm.check_leverage_limits(
+                    current_positions=all_active_positions, 
+                    total_equity=total_equity,
+                    confidence=effective_confidence
+                )
+                
+                if not is_allowed:
+                    logger.warning(f"🚫 [Risk Limit] Skipping {symbol}: {reason}")
+                    continue
+
+                # Calculate Safe Position Size (Notional USDT)
+                allowed_notional = pm.calculate_position_size(
+                    total_equity=total_equity,
+                    current_positions=all_active_positions,
+                    confidence=effective_confidence,
+                    atr=atr_val,
+                    price=current_price,
+                    market_mode=market_mode
+                )
+                
+                if allowed_notional < 20.0: 
+                    logger.warning(f"🚫 [Size Limit] Skipping {symbol}: Allowed size {allowed_notional:.2f} < Min 20.0")
+                    continue
+                
+                # Determine Target Leverage
+                # Default 5x, High Conf 8x
+                strategy_suggested_leverage = trade_params.get('leverage', 5)
+                max_leverage = 8 if effective_confidence > 0.8 else 5
+                final_leverage = min(int(strategy_suggested_leverage), max_leverage)
+                
+                # Calculate Amount in Coins
+                # allowed_notional is the MAX allowed. We should use it, or a standard chunk if smaller?
+                # The user wants "High Frequency" -> usage of funds.
+                # We'll use the allowed_notional directly to maximize utilization up to the limit.
+                planned_notional = allowed_notional
                 amount_coins = planned_notional / opp.get('price', 1.0)
                 
-                logger.info(f"[{symbol}] Position Sizing: Equity=${total_equity:.2f}, Risk={position_pct*100}%, Planned=${planned_notional:.2f} (Min 20U)")
+                logger.info(f"[{symbol}] Position Sizing: Equity=${total_equity:.2f}, Planned=${planned_notional:.2f} (MaxAllowed), Leverage={final_leverage}x")
                 
-                # Check Limits
-                max_portfolio_leverage = float(cfg.get('max_portfolio_leverage', 10.0))
-                max_allowed_notional = total_equity * max_portfolio_leverage
-                
-                if current_total_notional + planned_notional > max_allowed_notional:
-                    logger.warning(f"🚫 [Max Position Limit {max_portfolio_leverage:.0f}x] Skipping {symbol}. Total Notional ({current_total_notional:.2f}) + New ({planned_notional:.2f}) > Limit ({max_allowed_notional:.2f})")
-                    continue
-
-                # Per-coin cap: 3x equity (Prevent all-in on one coin)
-                per_coin_limit = total_equity * 3.0
-                per_coin_current = 0.0
-                for pos_sym, pos_data in all_active_positions.items():
-                    clean = pos_sym.replace('/', '').replace(':USDT', '').replace(':BUSD', '')
-                    if clean == symbol:
-                        per_coin_current += float(pos_data.get('position_value_usdt', pos_data.get('notional', 0.0)))
-                if per_coin_current + planned_notional > per_coin_limit:
-                    logger.warning(f"🚫 [Per-Coin Limit 3x] Skipping {symbol}. Coin Notional ({per_coin_current:.2f}) + New ({planned_notional:.2f}) > Limit ({per_coin_limit:.2f})")
-                    continue
-
-                # Same-side net exposure cap: 6x equity
-                side_limit = total_equity * 6.0
-                same_side_current = 0.0
-                for pos_sym, pos_data in all_active_positions.items():
-                    pos_side = pos_data.get('side')
-                    if (pos_side == 'long' and trade_signal == 1) or (pos_side == 'short' and trade_signal == -1):
-                        same_side_current += float(pos_data.get('position_value_usdt', pos_data.get('notional', 0.0)))
-                if same_side_current + planned_notional > side_limit:
-                    logger.warning(f"🚫 [Side Limit 6x] Skipping {symbol}. Same-Side Notional ({same_side_current:.2f}) + New ({planned_notional:.2f}) > Limit ({side_limit:.2f})")
-                    continue
-
                 # Execute Trade
                 if trade_signal != 0:
                     # Use dynamic params from strategy if available
                     sl_price = trade_params.get('sl_price')
                     tp_price = trade_params.get('tp_price')
-                    # Cap Leverage at 10x
-                    raw_leverage = trade_params.get('leverage', 10)
-                    leverage = min(int(raw_leverage), 10)
                     
-                    logger.info(f"[{symbol}] Position Sizing: Equity={total_equity:.2f}, Pct={position_pct*100}%, Planned={planned_notional:.2f}U")
-
-                    # Fallback to defaults (Risk:Reward 1:2)
-                    # SL 2%, TP 4%
-                    sl_pct = cfg.get('sl_pct', 0.02) 
-                    tp_pct = cfg.get('tp_pct', 0.04)
+                    # Fallback to defaults (Risk:Reward 1:3 as per user request)
+                    # User: "Risk-reward ratio 1:3 and 2% hard stop-loss"
+                    # SL 2%, TP 6%
+                    sl_pct = 0.02
+                    tp_pct = 0.06
+                    
+                    # Adjust for Scalping Mode (Low Volatility)
+                    # If the signal reason contains "[Scalp]", use tighter SL/TP
+                    # We can check the strategy logs or infer from market mode if we had access.
+                    # For now, we rely on the generic SL/TP or what strategy returned in trade_params.
                     
                     trader.execute_trade(
                         signal=trade_signal, 
@@ -410,7 +490,7 @@ def main():
                         tp_pct=tp_pct,
                         sl_price=sl_price,
                         tp_price=tp_price,
-                        leverage=int(leverage),
+                        leverage=int(final_leverage),
                         amount_coins=amount_coins
                     )
             

@@ -3,14 +3,13 @@
 ![Project Status](https://img.shields.io/badge/Status-Active-success)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-15-black)
-![Docker](https://img.shields.io/badge/Docker-Supported-blue)
 
 ## 📖 项目概览 (Project Overview)
 
 本项目是一个集成了量化模型的比特币（BTC）及多币种数据分析与预测系统。核心功能包括获取 BTC 及 Top 30 主流币种的历史与实时交易数据，利用机器学习模型（XGBoost/RandomForest）实时预测未来 10分钟、30分钟及 60分钟的价格涨跌概率，并通过一个高度定制化的、类似币安风格的专业 Web 界面展示预测结果与市场状态。
 
 ### 最新特性 (New Features)
-*   **多币种支持**: 扩展支持 **14 个主流币种**（BTC, ETH, SOL, BNB, DOGE, XRP, PEPE, AVAX, LINK, ADA, TRX, LDO, BCH, OPN）的实时监控与交易。
+*   **多币种支持**: 扩展支持 **14 个主流币种**（BTC, ETH, SOL, BNB, DOGE, XRP, PEPE, AVAX, LINK, ADA, TRX, LDO, BCH, OP）的实时监控与交易。
 *   **全历史数据聚合**: 修复了 PnL 和胜率计算问题，现在能正确汇总所有监控币种的历史交易数据。
 *   **智能防限流**: 实现了 **顺序初始化 (Sequential Initialization)** 机制，避免启动时触发交易所 API 频率限制 (429/IP Ban)。
 *   **动态风控**: 
@@ -32,16 +31,14 @@
 *   **前端 (Frontend)**: Next.js 15, React, Tailwind CSS, Lucide Icons, Recharts
 *   **后端 (Backend)**: FastAPI, Uvicorn, WebSocket
 *   **数据科学 (Data Science)**: Pandas, NumPy, Scikit-learn, XGBoost, TA-Lib (Technical Analysis)
-*   **基础设施 (Infra)**: Docker, Docker Compose
-*   **工具 (Tools)**: APScheduler (定时任务), Expect (自动化部署)
+*   **工具 (Tools)**: APScheduler (定时任务)
 
 ## 🚀 快速开始 (Quick Start)
 
 ### 前置要求 (Prerequisites)
 
-*   [Docker](https://www.docker.com/) & Docker Compose
-*   [Python 3.10+](https://www.python.org/) (用于本地开发)
-*   [Node.js 18+](https://nodejs.org/) (用于本地开发)
+*   [Python 3.10+](https://www.python.org/)
+*   [Node.js 18+](https://nodejs.org/)
 
 ### 配置 (Configuration)
 
@@ -65,20 +62,9 @@
 
 > 安全提示：仓库已在 `.gitignore` 中忽略了 `.env` 与 `trader_config.json`。如曾误提交敏感文件，请执行 `git rm --cached <文件>` 后再提交。
 
-### 使用 Docker 启动 (Recommended)
+### 本地启动 (Local Setup)
 
-只需一条命令即可启动整个堆栈（前端 + 后端）：
-
-```bash
-docker-compose up --build -d
-```
-
-*   **前端访问**: http://localhost:3000
-*   **后端 API**: http://localhost:8000/docs
-
-### 本地开发 (Local Development)
-
-#### 后端 Setup
+#### 1. 后端 Setup
 
 ```bash
 # 1. 创建虚拟环境
@@ -88,21 +74,25 @@ source .venv/bin/activate
 # 2. 安装依赖
 pip install -r requirements.txt
 
-# 3. 运行后端
+# 3. 运行后端 API 服务
 python src/api/main.py
 ```
+后端 API 地址: http://localhost:8000/docs
 
-#### 前端 Setup
+#### 2. 前端 Setup
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+前端访问地址: http://localhost:3000
 
-### 交易机器人 (Multi-Coin Bot)
+#### 3. 启动实盘交易机器人 (Multi-Coin Bot)
 
 ```bash
+# 在新的终端窗口中运行
+source .venv/bin/activate
 python scripts/run_multicoin_bot.py
 ```
 
@@ -115,7 +105,7 @@ python scripts/run_multicoin_bot.py
 ```
 .
 ├── configs/            # 配置文件
-├── docs/               # 项目文档 (部署笔记, 架构说明)
+├── docs/               # 项目文档 (架构说明)
 ├── frontend/           # Next.js 前端项目
 ├── scripts/            # 运维与工具脚本
 ├── src/                # 后端核心代码
@@ -125,17 +115,8 @@ python scripts/run_multicoin_bot.py
 │   ├── models/         # 机器学习模型 (训练/预测)
 │   ├── notification/   # 消息推送 (飞书)
 │   └── trader/         # 模拟交易引擎
-├── Dockerfile.backend  # 后端构建文件
-├── Dockerfile.frontend # 前端构建文件
-├── docker-compose.yml  # 容器编排
 └── requirements.txt    # Python 依赖
 ```
-
-## 🚢 部署 (Deployment)
-
-详细部署指南请参考 [docs/DEPLOYMENT_NOTES.md](docs/DEPLOYMENT_NOTES.md)。
-
-本项目支持一键部署到云服务器（如阿里云），包含自动化打包脚本和环境配置说明。
 
 ## 🔐 安全与合规 (Security)
 
@@ -144,14 +125,14 @@ python scripts/run_multicoin_bot.py
   - `trader_config.json`（包含 `api_key`、`api_secret`）
 - 校验是否被跟踪：
   ```bash
-  git ls-files --error-unmatch .env || echo \"NOT TRACKED\"
-  git ls-files --error-unmatch trader_config.json || echo \"NOT TRACKED\"
+  git ls-files --error-unmatch .env || echo "NOT TRACKED"
+  git ls-files --error-unmatch trader_config.json || echo "NOT TRACKED"
   ```
 - 若误加入 Git 历史：
   ```bash
   git rm --cached .env trader_config.json
-  echo -e \"\\n.env\\ntrader_config.json\" >> .gitignore
-  git commit -m \"chore: remove secrets from repo\"
+  echo -e "\n.env\ntrader_config.json" >> .gitignore
+  git commit -m "chore: remove secrets from repo"
   ```
 
 ## ⛑ 稳定性 (Resilience)

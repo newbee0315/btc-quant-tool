@@ -126,8 +126,8 @@ export default function FeishuPage() {
   const StatusBadge = ({ active, text }: { active: boolean, text: string }) => (
     <div className={`flex items-center gap-1.5 px-2 py-1 rounded border text-xs font-medium ${
       active 
-        ? 'bg-[#132F25] text-[#0ECB81] border-[#0ECB81]/30' 
-        : 'bg-[#2E1818] text-[#F6465D] border-[#F6465D]/30'
+        ? 'bg-[#132F25] text-green-600 dark:text-[#0ECB81] border-[#0ECB81]/30' 
+        : 'bg-[#2E1818] text-red-600 dark:text-[#F6465D] border-[#F6465D]/30'
     }`}>
       {active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
       {text}
@@ -135,25 +135,25 @@ export default function FeishuPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0B0E11] text-[#EAECEF] p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-[#0B0E11] text-gray-900 dark:text-[#EAECEF] p-4 md:p-8 font-sans">
       <header className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-[#F0B90B] flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-yellow-600 dark:text-[#F0B90B] flex items-center gap-2">
             <MessageSquare className="w-6 h-6" />
             飞书自定义机器人监控 (Feishu Bot Monitor)
           </h1>
-          <p className="text-sm text-[#848E9C] mt-1">实时监控机器人状态、一键诊断与配置管理</p>
+          <p className="text-sm text-gray-500 dark:text-[#848E9C] mt-1">实时监控机器人状态、一键诊断与配置管理</p>
         </div>
-        <a href="/" className="px-4 py-2 bg-[#2B3139] rounded hover:bg-[#3A4049] text-sm flex items-center gap-2 transition-colors">
+        <a href="/" className="px-4 py-2 bg-gray-100 dark:bg-[#2B3139] rounded hover:bg-[#3A4049] text-sm flex items-center gap-2 transition-colors">
           <span>返回首页</span>
         </a>
       </header>
 
       {/* 1. Status Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-[#1E2329] p-4 rounded-lg border border-[#2B3139] flex items-center justify-between">
+        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-lg border border-gray-200 dark:border-[#2B3139] flex items-center justify-between">
             <div>
-                <p className="text-[#848E9C] text-xs uppercase mb-1">运行状态 (Status)</p>
+                <p className="text-gray-500 dark:text-[#848E9C] text-xs uppercase mb-1">运行状态 (Status)</p>
                 <div className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded-full ${stats?.last_success_timestamp ? 'bg-[#0ECB81] animate-pulse' : 'bg-gray-500'}`}></div>
                     <span className="text-lg font-bold">
@@ -164,41 +164,41 @@ export default function FeishuPage() {
             <Server className="w-8 h-8 text-[#474D57]" />
         </div>
 
-        <div className="bg-[#1E2329] p-4 rounded-lg border border-[#2B3139] flex items-center justify-between">
+        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-lg border border-gray-200 dark:border-[#2B3139] flex items-center justify-between">
             <div>
-                <p className="text-[#848E9C] text-xs uppercase mb-1">发送成功率 (Success Rate)</p>
+                <p className="text-gray-500 dark:text-[#848E9C] text-xs uppercase mb-1">发送成功率 (Success Rate)</p>
                 <div className="flex items-baseline gap-1">
-                    <span className="text-xl font-bold text-[#EAECEF]">
+                    <span className="text-xl font-bold text-gray-900 dark:text-[#EAECEF]">
                         {stats && stats.total_sent > 0 
                             ? Math.round((stats.success_count / stats.total_sent) * 100) 
                             : 0}%
                     </span>
-                    <span className="text-xs text-[#848E9C]">
+                    <span className="text-xs text-gray-500 dark:text-[#848E9C]">
                         ({stats?.success_count || 0}/{stats?.total_sent || 0})
                     </span>
                 </div>
             </div>
-            <Activity className="w-8 h-8 text-[#F0B90B]" />
+            <Activity className="w-8 h-8 text-yellow-600 dark:text-[#F0B90B]" />
         </div>
 
-        <div className="bg-[#1E2329] p-4 rounded-lg border border-[#2B3139] flex items-center justify-between">
+        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-lg border border-gray-200 dark:border-[#2B3139] flex items-center justify-between">
             <div>
-                <p className="text-[#848E9C] text-xs uppercase mb-1">今日发送 (Today)</p>
-                <span className="text-xl font-bold text-[#EAECEF]">
+                <p className="text-gray-500 dark:text-[#848E9C] text-xs uppercase mb-1">今日发送 (Today)</p>
+                <span className="text-xl font-bold text-gray-900 dark:text-[#EAECEF]">
                     {stats?.daily_counts[new Date().toISOString().split('T')[0]] || 0}
                 </span>
             </div>
-            <BarChart2 className="w-8 h-8 text-[#848E9C]" />
+            <BarChart2 className="w-8 h-8 text-gray-500 dark:text-[#848E9C]" />
         </div>
 
-        <div className="bg-[#1E2329] p-4 rounded-lg border border-[#2B3139] flex items-center justify-between">
+        <div className="bg-white dark:bg-[#1E2329] p-4 rounded-lg border border-gray-200 dark:border-[#2B3139] flex items-center justify-between">
             <div>
-                <p className="text-[#848E9C] text-xs uppercase mb-1">最后活跃 (Last Active)</p>
-                <span className="text-sm font-medium text-[#EAECEF]">
+                <p className="text-gray-500 dark:text-[#848E9C] text-xs uppercase mb-1">最后活跃 (Last Active)</p>
+                <span className="text-sm font-medium text-gray-900 dark:text-[#EAECEF]">
                     {formatDate(stats?.last_success_timestamp || null)}
                 </span>
             </div>
-            <Clock className="w-8 h-8 text-[#848E9C]" />
+            <Clock className="w-8 h-8 text-gray-500 dark:text-[#848E9C]" />
         </div>
       </div>
 
@@ -208,15 +208,15 @@ export default function FeishuPage() {
         <div className="lg:col-span-1 space-y-6">
             
             {/* Diagnostic Module */}
-            <div className="bg-[#1E2329] p-6 rounded-lg border border-[#2B3139]">
+            <div className="bg-white dark:bg-[#1E2329] p-6 rounded-lg border border-gray-200 dark:border-[#2B3139]">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold text-[#F0B90B] flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-yellow-600 dark:text-[#F0B90B] flex items-center gap-2">
                         <Shield className="w-5 h-5" />
                         一键诊断 (Diagnosis)
                     </h2>
                 </div>
                 
-                <p className="text-xs text-[#848E9C] mb-4">
+                <p className="text-xs text-gray-500 dark:text-[#848E9C] mb-4">
                     机器人长时间未响应？点击下方按钮自动检测 Webhook 配置、网络连通性及 API 权限。
                 </p>
 
@@ -225,7 +225,7 @@ export default function FeishuPage() {
                     disabled={diagnosing}
                     className={`w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
                         diagnosing 
-                        ? 'bg-[#2B3139] text-[#848E9C] cursor-not-allowed' 
+                        ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C] cursor-not-allowed' 
                         : 'bg-[#F0B90B] hover:bg-[#D9A60A] text-black'
                     }`}
                 >
@@ -237,32 +237,32 @@ export default function FeishuPage() {
                 </button>
 
                 {diagnosticResult && (
-                    <div className="mt-4 space-y-3 bg-[#161A25] p-4 rounded border border-[#2B3139] animate-fade-in">
+                    <div className="mt-4 space-y-3 bg-white dark:bg-[#161A25] p-4 rounded border border-gray-200 dark:border-[#2B3139] animate-fade-in">
                         <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#848E9C]">Webhook 配置</span>
+                            <span className="text-sm text-gray-500 dark:text-[#848E9C]">Webhook 配置</span>
                             <StatusBadge active={diagnosticResult.webhook_configured} text={diagnosticResult.webhook_configured ? "Correct" : "Missing"} />
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#848E9C]">网络连通性</span>
+                            <span className="text-sm text-gray-500 dark:text-[#848E9C]">网络连通性</span>
                             <StatusBadge active={diagnosticResult.network_connectivity} text={diagnosticResult.network_connectivity ? "Pass" : "Fail"} />
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#848E9C]">API 可达性</span>
+                            <span className="text-sm text-gray-500 dark:text-[#848E9C]">API 可达性</span>
                             <StatusBadge active={diagnosticResult.api_reachable} text={diagnosticResult.api_reachable ? "Reachable" : "Blocked"} />
                         </div>
                         
                         {diagnosticResult.recent_errors.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-[#2B3139]">
-                                <p className="text-xs text-[#F6465D] font-bold mb-2 flex items-center gap-1">
+                            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-[#2B3139]">
+                                <p className="text-xs text-red-600 dark:text-[#F6465D] font-bold mb-2 flex items-center gap-1">
                                     <AlertTriangle className="w-3 h-3" /> 最近错误日志:
                                 </p>
-                                <div className="text-[10px] text-[#F6465D] bg-[#2E1818] p-2 rounded overflow-x-auto">
+                                <div className="text-[10px] text-red-600 dark:text-[#F6465D] bg-[#2E1818] p-2 rounded overflow-x-auto">
                                     {diagnosticResult.recent_errors[0].error || "Unknown Error"}
                                 </div>
                             </div>
                         )}
                         
-                        <div className="text-[10px] text-[#848E9C] text-center mt-2">
+                        <div className="text-[10px] text-gray-500 dark:text-[#848E9C] text-center mt-2">
                             检测时间: {new Date(diagnosticResult.timestamp).toLocaleTimeString()}
                         </div>
                     </div>
@@ -270,15 +270,15 @@ export default function FeishuPage() {
             </div>
 
             {/* Configuration */}
-            <div className="bg-[#1E2329] p-6 rounded-lg border border-[#2B3139]">
-                <h2 className="text-lg font-semibold mb-4 text-[#F0B90B] flex items-center gap-2">
+            <div className="bg-white dark:bg-[#1E2329] p-6 rounded-lg border border-gray-200 dark:border-[#2B3139]">
+                <h2 className="text-lg font-semibold mb-4 text-yellow-600 dark:text-[#F0B90B] flex items-center gap-2">
                     <Settings className="w-5 h-5" />
                     参数配置 (Settings)
                 </h2>
                 
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm text-[#848E9C] mb-2">
+                        <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-2">
                             置信度阈值 (Confidence Threshold)
                         </label>
                         <div className="flex items-center space-x-4">
@@ -289,16 +289,16 @@ export default function FeishuPage() {
                                 step="0.01"
                                 value={config.confidence_threshold}
                                 onChange={(e) => setConfig({...config, confidence_threshold: parseFloat(e.target.value)})}
-                                className="flex-1 accent-[#F0B90B] h-2 bg-[#2B3139] rounded-lg appearance-none cursor-pointer"
+                                className="flex-1 accent-yellow-600 dark:accent-[#F0B90B] h-2 bg-gray-100 dark:bg-[#2B3139] rounded-lg appearance-none cursor-pointer"
                             />
-                            <span className="text-[#EAECEF] font-mono w-12 text-right">
+                            <span className="text-gray-900 dark:text-[#EAECEF] font-mono w-12 text-right">
                                 {Math.round(config.confidence_threshold * 100)}%
                             </span>
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm text-[#848E9C] mb-2">
+                        <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-2">
                             通知级别 (Notification Level)
                         </label>
                         <div className="grid grid-cols-2 gap-2">
@@ -307,7 +307,7 @@ export default function FeishuPage() {
                                 className={`px-4 py-2 rounded text-xs transition-colors ${
                                     config.notification_level === 'HIGH_ONLY' 
                                     ? 'bg-[#F0B90B] text-black font-bold' 
-                                    : 'bg-[#2B3139] text-[#848E9C] hover:bg-[#363C45]'
+                                    : 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C] hover:bg-gray-200 dark:hover:bg-[#363C45]'
                                 }`}
                             >
                                 仅高置信度
@@ -317,7 +317,7 @@ export default function FeishuPage() {
                                 className={`px-4 py-2 rounded text-xs transition-colors ${
                                     config.notification_level === 'ALL' 
                                     ? 'bg-[#F0B90B] text-black font-bold' 
-                                    : 'bg-[#2B3139] text-[#848E9C] hover:bg-[#363C45]'
+                                    : 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C] hover:bg-gray-200 dark:hover:bg-[#363C45]'
                                 }`}
                             >
                                 所有信号
@@ -330,7 +330,7 @@ export default function FeishuPage() {
                         disabled={saving}
                         className={`w-full py-2 rounded font-medium transition-colors flex items-center justify-center gap-2 ${
                             saving 
-                            ? 'bg-[#2B3139] text-[#848E9C]' 
+                            ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-500 dark:text-[#848E9C]' 
                             : 'bg-[#474D57] hover:bg-[#59606D] text-white'
                         }`}
                     >
@@ -341,12 +341,12 @@ export default function FeishuPage() {
             </div>
 
             {/* Troubleshooting Guide */}
-            <div className="bg-[#1E2329] rounded-lg border border-[#2B3139] overflow-hidden">
+            <div className="bg-white dark:bg-[#1E2329] rounded-lg border border-gray-200 dark:border-[#2B3139] overflow-hidden">
                 <button 
                     onClick={() => setShowTroubleshoot(!showTroubleshoot)}
-                    className="w-full p-4 flex justify-between items-center text-left hover:bg-[#2B3139] transition-colors"
+                    className="w-full p-4 flex justify-between items-center text-left hover:bg-gray-100 dark:bg-[#2B3139] transition-colors"
                 >
-                    <div className="flex items-center gap-2 text-[#F0B90B] font-semibold">
+                    <div className="flex items-center gap-2 text-yellow-600 dark:text-[#F0B90B] font-semibold">
                         <HelpCircle className="w-5 h-5" />
                         <span>常见问题与指引 (Help & Guide)</span>
                     </div>
@@ -354,30 +354,30 @@ export default function FeishuPage() {
                 </button>
                 
                 {showTroubleshoot && (
-                    <div className="p-4 bg-[#161A25] border-t border-[#2B3139] text-xs space-y-4">
+                    <div className="p-4 bg-white dark:bg-[#161A25] border-t border-gray-200 dark:border-[#2B3139] text-xs space-y-4">
                         <div className="space-y-2">
-                            <h3 className="font-bold text-[#EAECEF] flex items-center gap-1">
+                            <h3 className="font-bold text-gray-900 dark:text-[#EAECEF] flex items-center gap-1">
                                 <Key className="w-3 h-3" /> Webhook 密钥失效
                             </h3>
-                            <p className="text-[#848E9C] leading-relaxed">
-                                如果诊断显示 API 不可达或 Webhook 配置错误，请前往 <a href="https://open.feishu.cn/" target="_blank" className="text-[#F0B90B] hover:underline">飞书开放平台</a> 重新生成 Webhook 地址，并更新项目 <code>.env</code> 文件中的 <code>FEISHU_WEBHOOK_URL</code>。
+                            <p className="text-gray-500 dark:text-[#848E9C] leading-relaxed">
+                                如果诊断显示 API 不可达或 Webhook 配置错误，请前往 <a href="https://open.feishu.cn/" target="_blank" className="text-yellow-600 dark:text-[#F0B90B] hover:underline">飞书开放平台</a> 重新生成 Webhook 地址，并更新项目 <code>.env</code> 文件中的 <code>FEISHU_WEBHOOK_URL</code>。
                             </p>
                         </div>
                         
                         <div className="space-y-2">
-                            <h3 className="font-bold text-[#EAECEF] flex items-center gap-1">
+                            <h3 className="font-bold text-gray-900 dark:text-[#EAECEF] flex items-center gap-1">
                                 <Shield className="w-3 h-3" /> IP 白名单限制
                             </h3>
-                            <p className="text-[#848E9C] leading-relaxed">
+                            <p className="text-gray-500 dark:text-[#848E9C] leading-relaxed">
                                 飞书机器人安全设置中如果开启了 IP 白名单，请确保部署服务器的 IP 地址 (当前: <code>106.15.73.181</code> 或本地 IP) 已被添加。建议测试阶段暂时关闭 IP 限制。
                             </p>
                         </div>
 
                         <div className="space-y-2">
-                            <h3 className="font-bold text-[#EAECEF] flex items-center gap-1">
+                            <h3 className="font-bold text-gray-900 dark:text-[#EAECEF] flex items-center gap-1">
                                 <Wifi className="w-3 h-3" /> 网络连通性
                             </h3>
-                            <p className="text-[#848E9C] leading-relaxed">
+                            <p className="text-gray-500 dark:text-[#848E9C] leading-relaxed">
                                 确保服务器能够访问 <code>open.feishu.cn</code>。如果诊断中 DNS 解析失败，请检查服务器 DNS 配置。
                             </p>
                         </div>
@@ -390,53 +390,53 @@ export default function FeishuPage() {
         <div className="lg:col-span-2 space-y-6">
             
             {/* Recent History */}
-            <div className="bg-[#1E2329] rounded-lg border border-[#2B3139] flex flex-col h-[600px]">
-                <div className="p-4 border-b border-[#2B3139] flex justify-between items-center">
-                    <h2 className="text-lg font-semibold text-[#F0B90B]">发送记录 (Message History)</h2>
-                    <span className="text-xs text-[#848E9C]">Last 100 messages</span>
+            <div className="bg-white dark:bg-[#1E2329] rounded-lg border border-gray-200 dark:border-[#2B3139] flex flex-col h-[600px]">
+                <div className="p-4 border-b border-gray-200 dark:border-[#2B3139] flex justify-between items-center">
+                    <h2 className="text-lg font-semibold text-yellow-600 dark:text-[#F0B90B]">发送记录 (Message History)</h2>
+                    <span className="text-xs text-gray-500 dark:text-[#848E9C]">Last 100 messages</span>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                     {loading && messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-[#848E9C] gap-2">
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-[#848E9C] gap-2">
                             <RefreshCw className="w-6 h-6 animate-spin" />
                             <span>加载中...</span>
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-[#848E9C]">
+                        <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-[#848E9C]">
                             <span>暂无消息记录</span>
                         </div>
                     ) : (
                         messages.map((msg, idx) => (
-                            <div key={idx} className="bg-[#161A25] p-3 rounded border border-[#2B3139] text-sm hover:border-[#474D57] transition-colors">
+                            <div key={idx} className="bg-white dark:bg-[#161A25] p-3 rounded border border-gray-200 dark:border-[#2B3139] text-sm hover:border-gray-300 dark:border-[#474D57] transition-colors">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="flex items-center gap-2">
                                         <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
-                                            msg.type === 'text' ? 'bg-[#2B3139] text-[#EAECEF]' : 'bg-[#2E1818] text-[#F0B90B]'
+                                            msg.type === 'text' ? 'bg-gray-100 dark:bg-[#2B3139] text-gray-900 dark:text-[#EAECEF]' : 'bg-[#2E1818] text-yellow-600 dark:text-[#F0B90B]'
                                         }`}>
                                             {msg.type}
                                         </span>
-                                        <span className="text-[#848E9C] text-xs font-mono">
+                                        <span className="text-gray-500 dark:text-[#848E9C] text-xs font-mono">
                                             {formatDate(msg.timestamp)}
                                         </span>
                                     </div>
                                     {msg.status === 'success' ? (
-                                        <div className="flex items-center gap-1 text-[#0ECB81] text-xs">
+                                        <div className="flex items-center gap-1 text-green-600 dark:text-[#0ECB81] text-xs">
                                             <CheckCircle className="w-3 h-3" />
                                             <span>Sent</span>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center gap-1 text-[#F6465D] text-xs">
+                                        <div className="flex items-center gap-1 text-red-600 dark:text-[#F6465D] text-xs">
                                             <XCircle className="w-3 h-3" />
                                             <span>Failed</span>
                                         </div>
                                     )}
                                 </div>
-                                <div className="text-[#EAECEF] break-all font-mono text-xs leading-relaxed opacity-90">
+                                <div className="text-gray-900 dark:text-[#EAECEF] break-all font-mono text-xs leading-relaxed opacity-90">
                                     {msg.content}
                                 </div>
                                 {msg.error && (
-                                    <div className="mt-2 text-[#F6465D] text-xs bg-[#2E1818] p-2 rounded">
+                                    <div className="mt-2 text-red-600 dark:text-[#F6465D] text-xs bg-[#2E1818] p-2 rounded">
                                         Error: {msg.error}
                                     </div>
                                 )}
@@ -447,8 +447,8 @@ export default function FeishuPage() {
             </div>
 
             {/* Daily Trend Chart (Simple CSS Bar Chart) */}
-            <div className="bg-[#1E2329] p-4 rounded-lg border border-[#2B3139]">
-                <h2 className="text-lg font-semibold mb-4 text-[#F0B90B] flex items-center gap-2">
+            <div className="bg-white dark:bg-[#1E2329] p-4 rounded-lg border border-gray-200 dark:border-[#2B3139]">
+                <h2 className="text-lg font-semibold mb-4 text-yellow-600 dark:text-[#F0B90B] flex items-center gap-2">
                     <BarChart2 className="w-5 h-5" />
                     近30天发送趋势 (30-Day Trend)
                 </h2>
@@ -464,23 +464,23 @@ export default function FeishuPage() {
                                 return (
                                     <div key={date} className="flex-1 flex flex-col items-center group relative">
                                         <div 
-                                            className="w-full bg-[#2B3139] hover:bg-[#F0B90B] transition-colors rounded-t"
+                                            className="w-full bg-gray-100 dark:bg-[#2B3139] hover:bg-[#F0B90B] transition-colors rounded-t"
                                             style={{ height: `${height}%` }}
                                         ></div>
                                         {/* Tooltip */}
-                                        <div className="absolute bottom-full mb-2 hidden group-hover:block bg-[#161A25] text-xs p-2 rounded border border-[#474D57] whitespace-nowrap z-10">
+                                        <div className="absolute bottom-full mb-2 hidden group-hover:block bg-white dark:bg-[#161A25] text-xs p-2 rounded border border-gray-300 dark:border-[#474D57] whitespace-nowrap z-10">
                                             {date}: {count} msgs
                                         </div>
                                     </div>
                                 );
                             })
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[#848E9C] text-sm">
+                        <div className="w-full h-full flex items-center justify-center text-gray-500 dark:text-[#848E9C] text-sm">
                             No trend data available yet
                         </div>
                     )}
                 </div>
-                <div className="flex justify-between text-[10px] text-[#848E9C] mt-2 border-t border-[#2B3139] pt-2">
+                <div className="flex justify-between text-[10px] text-gray-500 dark:text-[#848E9C] mt-2 border-t border-gray-200 dark:border-[#2B3139] pt-2">
                     <span>30 days ago</span>
                     <span>Today</span>
                 </div>

@@ -125,18 +125,18 @@ export default function SettingsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#0E1117] text-[#EAECEF] p-4 sm:p-8 font-sans">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#0E1117] text-gray-900 dark:text-[#EAECEF] p-4 sm:p-8 font-sans">
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-8">
-                    <Link href="/" className="p-2 hover:bg-[#2B3139] rounded-lg transition-colors">
-                        <ArrowLeft className="w-5 h-5 text-[#848E9C]" />
+                    <Link href="/" className="p-2 hover:bg-gray-100 dark:bg-[#2B3139] rounded-lg transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-gray-500 dark:text-[#848E9C]" />
                     </Link>
                     <h1 className="text-2xl font-bold">系统配置 (System Settings)</h1>
                 </div>
 
                 {message && (
-                    <div className={`mb-6 p-4 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-500/10 text-[#0ECB81] border border-green-500/20' : 'bg-red-500/10 text-[#F6465D] border border-red-500/20'}`}>
+                    <div className={`mb-6 p-4 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-500/10 text-green-600 dark:text-[#0ECB81] border border-green-500/20' : 'bg-red-500/10 text-red-600 dark:text-[#F6465D] border border-red-500/20'}`}>
                         {message.type === 'success' ? <RefreshCw className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                         {message.text}
                     </div>
@@ -144,42 +144,42 @@ export default function SettingsPage() {
 
                 {loading ? (
                     <div className="flex justify-center py-12">
-                        <Activity className="w-8 h-8 animate-spin text-[#F0B90B]" />
+                        <Activity className="w-8 h-8 animate-spin text-yellow-600 dark:text-[#F0B90B]" />
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Strategy Settings */}
-                        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] p-6">
-                            <div className="flex items-center gap-2 mb-6 border-b border-[#2B3139] pb-4">
-                                <Zap className="w-5 h-5 text-[#F0B90B]" />
+                        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] p-6">
+                            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-[#2B3139] pb-4">
+                                <Zap className="w-5 h-5 text-yellow-600 dark:text-[#F0B90B]" />
                                 <h2 className="text-lg font-semibold">策略参数 (Strategy)</h2>
                             </div>
                             
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">EMA 周期 (Trend Filter)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">EMA 周期 (Trend Filter)</label>
                                     <input 
                                         type="number" 
                                         value={strategyConfig.ema_period}
                                         onChange={(e) => setStrategyConfig({...strategyConfig, ema_period: parseInt(e.target.value)})}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                     />
-                                    <p className="text-[10px] text-[#848E9C] mt-1">趋势判断均线周期 (默认 200)</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">趋势判断均线周期 (默认 200)</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">RSI 周期 (Momentum)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">RSI 周期 (Momentum)</label>
                                     <input 
                                         type="number" 
                                         value={strategyConfig.rsi_period}
                                         onChange={(e) => setStrategyConfig({...strategyConfig, rsi_period: parseInt(e.target.value)})}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                     />
-                                    <p className="text-[10px] text-[#848E9C] mt-1">动量指标周期 (默认 14)</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">动量指标周期 (默认 14)</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">ML 开单阈值 (Confidence Threshold)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">ML 开单阈值 (Confidence Threshold)</label>
                                     <div className="flex items-center gap-4">
                                         <input 
                                             type="range" 
@@ -188,15 +188,15 @@ export default function SettingsPage() {
                                             step="0.01" 
                                             value={strategyConfig.ml_threshold}
                                             onChange={(e) => setStrategyConfig({...strategyConfig, ml_threshold: parseFloat(e.target.value)})}
-                                            className="flex-1 accent-[#F0B90B]"
+                                            className="flex-1 accent-yellow-600 dark:accent-[#F0B90B]"
                                         />
                                         <span className="font-mono w-16 text-right">{(strategyConfig.ml_threshold * 100).toFixed(0)}%</span>
                                     </div>
-                                    <p className="text-[10px] text-[#848E9C] mt-1">模型预测概率高于此值才开单</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">模型预测概率高于此值才开单</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">合约杠杆 (Leverage)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">合约杠杆 (Leverage)</label>
                                     <input 
                                         type="number" 
                                         min="1"
@@ -207,39 +207,39 @@ export default function SettingsPage() {
                                             const clamped = Math.max(1, Math.min(10, isNaN(v) ? 1 : v));
                                             setStrategyConfig({...strategyConfig, leverage: clamped});
                                         }}
-                                        className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                        className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                     />
-                                    <p className="text-[10px] text-[#848E9C] mt-1">合约杠杆倍数 (1x - 10x)</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">合约杠杆倍数 (1x - 10x)</p>
                                 </div>
                             </div>
                         </div>
 
                         {/* Trader Settings */}
-                        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] p-6">
-                            <div className="flex items-center gap-2 mb-6 border-b border-[#2B3139] pb-4">
-                                <Shield className="w-5 h-5 text-[#0ECB81]" />
+                        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] p-6">
+                            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-[#2B3139] pb-4">
+                                <Shield className="w-5 h-5 text-green-600 dark:text-[#0ECB81]" />
                                 <h2 className="text-lg font-semibold">交易配置 (Trader)</h2>
                             </div>
                             
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">交易模式 (Mode)</label>
-                                    <div className="flex bg-[#2B3139] rounded p-1">
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">交易模式 (Mode)</label>
+                                    <div className="flex bg-gray-100 dark:bg-[#2B3139] rounded p-1">
                                         <button
                                             onClick={() => setTraderConfig({...traderConfig, mode: 'paper'})}
-                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${traderConfig.mode === 'paper' ? 'bg-[#474D57] text-white shadow' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${traderConfig.mode === 'paper' ? 'bg-[#474D57] text-white shadow' : 'text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF]'}`}
                                         >
                                             模拟盘 (Paper)
                                         </button>
                                         <button
                                             onClick={() => setTraderConfig({...traderConfig, mode: 'real'})}
-                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${traderConfig.mode === 'real' ? 'bg-[#F6465D] text-white shadow' : 'text-[#848E9C] hover:text-[#EAECEF]'}`}
+                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${traderConfig.mode === 'real' ? 'bg-[#F6465D] text-white shadow' : 'text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF]'}`}
                                         >
                                             实盘 (Real)
                                         </button>
                                     </div>
                                     {traderConfig.mode === 'real' && (
-                                        <div className="mt-2 p-2 bg-[#F6465D]/10 border border-[#F6465D]/20 rounded text-[10px] text-[#F6465D] flex items-center gap-2">
+                                        <div className="mt-2 p-2 bg-red-50 dark:bg-[#F6465D]/10 border border-[#F6465D]/20 rounded text-[10px] text-red-600 dark:text-[#F6465D] flex items-center gap-2">
                                             <AlertCircle className="w-3 h-3" />
                                             警告：当前为实盘模式，将使用真实资金进行交易！
                                         </div>
@@ -247,7 +247,7 @@ export default function SettingsPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">账户总资金 (Total Capital)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">账户总资金 (Total Capital)</label>
                                     <div className="relative">
                                         <input 
                                             type="number" 
@@ -255,15 +255,15 @@ export default function SettingsPage() {
                                             step="100"
                                             value={traderConfig.total_capital}
                                             onChange={(e) => setTraderConfig({...traderConfig, total_capital: parseFloat(e.target.value)})}
-                                            className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 pl-8 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                            className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 pl-8 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                         />
-                                        <DollarSign className="w-4 h-4 text-[#848E9C] absolute left-2 top-2.5" />
+                                        <DollarSign className="w-4 h-4 text-gray-500 dark:text-[#848E9C] absolute left-2 top-2.5" />
                                     </div>
-                                    <p className="text-[10px] text-[#848E9C] mt-1">用于计算动态仓位风险的基础资金</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">用于计算动态仓位风险的基础资金</p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">单笔风险比例 (Risk Per Trade)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">单笔风险比例 (Risk Per Trade)</label>
                                     <div className="flex items-center gap-4">
                                         <input 
                                             type="range" 
@@ -276,22 +276,22 @@ export default function SettingsPage() {
                                         />
                                         <span className="font-mono w-16 text-right">{(traderConfig.risk_per_trade * 100).toFixed(1)}%</span>
                                     </div>
-                                    <p className="text-[10px] text-[#848E9C] mt-1">每笔交易愿意承担的本金亏损比例 (建议 1%-2%)</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">每笔交易愿意承担的本金亏损比例 (建议 1%-2%)</p>
                                 </div>
                                 
-                                <div className="p-3 bg-[#2B3139] rounded border border-[#474D57]/50 my-4">
-                                    <h4 className="text-xs font-semibold text-[#F0B90B] mb-2 flex items-center gap-1">
+                                <div className="p-3 bg-gray-100 dark:bg-[#2B3139] rounded border border-gray-300 dark:border-[#474D57]/50 my-4">
+                                    <h4 className="text-xs font-semibold text-yellow-600 dark:text-[#F0B90B] mb-2 flex items-center gap-1">
                                         <Zap className="w-3 h-3" />
                                         动态仓位说明
                                     </h4>
-                                    <p className="text-[10px] text-[#848E9C] leading-relaxed">
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] leading-relaxed">
                                         程序将根据 <strong>ATR波动率</strong> 自动计算止损距离，并结合 <strong>风险比例</strong> 动态决定开仓数量和杠杆倍数。<br/>
                                         计算公式: 仓位价值 = (总资金 × 风险比例) ÷ 止损距离
                                     </p>
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm text-[#848E9C] mb-1">备用固定金额 (Fallback Amount)</label>
+                                    <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">备用固定金额 (Fallback Amount)</label>
                                     <div className="relative">
                                         <input 
                                             type="number" 
@@ -299,70 +299,70 @@ export default function SettingsPage() {
                                             step="1"
                                             value={traderConfig.amount_usdt}
                                             onChange={(e) => setTraderConfig({...traderConfig, amount_usdt: parseFloat(e.target.value)})}
-                                            className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 pl-8 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                            className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 pl-8 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                         />
-                                        <DollarSign className="w-4 h-4 text-[#848E9C] absolute left-2 top-2.5" />
+                                        <DollarSign className="w-4 h-4 text-gray-500 dark:text-[#848E9C] absolute left-2 top-2.5" />
                                     </div>
-                                    <p className="text-[10px] text-[#848E9C] mt-1">仅在动态计算失败时使用的固定开仓金额 (USDT)</p>
+                                    <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">仅在动态计算失败时使用的固定开仓金额 (USDT)</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm text-[#848E9C] mb-1">止损比例 (Stop Loss %)</label>
+                                        <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">止损比例 (Stop Loss %)</label>
                                         <input 
                                             type="number" 
                                             step="0.1"
                                             value={parseFloat((traderConfig.sl_pct * 100).toFixed(2))}
                                             onChange={(e) => setTraderConfig({...traderConfig, sl_pct: parseFloat(e.target.value) / 100})}
-                                            className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                            className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm text-[#848E9C] mb-1">止盈比例 (Take Profit %)</label>
+                                        <label className="block text-sm text-gray-500 dark:text-[#848E9C] mb-1">止盈比例 (Take Profit %)</label>
                                         <input 
                                             type="number" 
                                             step="0.1"
                                             value={parseFloat((traderConfig.tp_pct * 100).toFixed(2))}
                                             onChange={(e) => setTraderConfig({...traderConfig, tp_pct: parseFloat(e.target.value) / 100})}
-                                            className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
+                                            className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-sm focus:border-[#F0B90B] outline-none transition-colors"
                                         />
                                     </div>
                                 </div>
 
-                                <div className="pt-4 border-t border-[#2B3139]">
-                                    <h3 className="text-sm font-medium mb-3 text-[#EAECEF]">Binance API 配置</h3>
+                                <div className="pt-4 border-t border-gray-200 dark:border-[#2B3139]">
+                                    <h3 className="text-sm font-medium mb-3 text-gray-900 dark:text-[#EAECEF]">Binance API 配置</h3>
                                     
                                     <div className="space-y-3">
                                         <div>
-                                            <label className="block text-xs text-[#848E9C] mb-1">API Key</label>
+                                            <label className="block text-xs text-gray-500 dark:text-[#848E9C] mb-1">API Key</label>
                                             <input 
                                                 type="text" 
                                                 value={traderConfig.api_key || ''}
                                                 onChange={(e) => setTraderConfig({...traderConfig, api_key: e.target.value})}
                                                 placeholder="Enter API Key"
-                                                className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
+                                                className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-[#848E9C] mb-1">API Secret</label>
+                                            <label className="block text-xs text-gray-500 dark:text-[#848E9C] mb-1">API Secret</label>
                                             <input 
                                                 type="password" 
                                                 value={traderConfig.api_secret || ''}
                                                 onChange={(e) => setTraderConfig({...traderConfig, api_secret: e.target.value})}
                                                 placeholder="Enter API Secret"
-                                                className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
+                                                className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs text-[#848E9C] mb-1">HTTP Proxy URL (Optional)</label>
+                                            <label className="block text-xs text-gray-500 dark:text-[#848E9C] mb-1">HTTP Proxy URL (Optional)</label>
                                             <input 
                                                 type="text" 
                                                 value={traderConfig.proxy_url || ''}
                                                 onChange={(e) => setTraderConfig({...traderConfig, proxy_url: e.target.value})}
                                                 placeholder="http://127.0.0.1:7890"
-                                                className="w-full bg-[#2B3139] border border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
+                                                className="w-full bg-gray-100 dark:bg-[#2B3139] border border-gray-300 dark:border-[#474D57] rounded p-2 text-xs focus:border-[#F0B90B] outline-none transition-colors font-mono"
                                             />
-                                            <p className="text-[10px] text-[#848E9C] mt-1">
+                                            <p className="text-[10px] text-gray-500 dark:text-[#848E9C] mt-1">
                                                 如在中国大陆运行，请填写本地代理地址 (Clash通常为 http://127.0.0.1:7890)
                                             </p>
                                         </div>
@@ -375,29 +375,29 @@ export default function SettingsPage() {
 
                 {/* Real Trading History Section */}
                 {traderConfig.mode === 'real' && (
-                    <div className="mt-8 bg-[#1E2329] rounded-xl border border-[#2B3139] p-6">
-                        <div className="flex items-center justify-between mb-4 border-b border-[#2B3139] pb-4">
+                    <div className="mt-8 bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] p-6">
+                        <div className="flex items-center justify-between mb-4 border-b border-gray-200 dark:border-[#2B3139] pb-4">
                             <div className="flex items-center gap-2">
-                                <History className="w-5 h-5 text-[#F0B90B]" />
+                                <History className="w-5 h-5 text-yellow-600 dark:text-[#F0B90B]" />
                                 <h2 className="text-lg font-semibold">实盘交易明细 (Real Trade History)</h2>
                             </div>
                             <button 
                                 onClick={fetchRealHistory}
-                                className="p-1 hover:bg-[#2B3139] rounded text-[#848E9C] hover:text-[#EAECEF] transition-colors"
+                                className="p-1 hover:bg-gray-100 dark:bg-[#2B3139] rounded text-gray-500 dark:text-[#848E9C] hover:text-gray-900 dark:text-[#EAECEF] transition-colors"
                             >
                                 <RefreshCw className="w-4 h-4" />
                             </button>
                         </div>
 
                         {realTrades.length === 0 ? (
-                            <div className="text-center py-8 text-[#848E9C] text-sm border border-dashed border-[#2B3139] rounded-lg">
+                            <div className="text-center py-8 text-gray-500 dark:text-[#848E9C] text-sm border border-dashed border-gray-200 dark:border-[#2B3139] rounded-lg">
                                 暂无实盘交易记录
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead>
-                                        <tr className="text-[#848E9C] border-b border-[#2B3139]">
+                                        <tr className="text-gray-500 dark:text-[#848E9C] border-b border-gray-200 dark:border-[#2B3139]">
                                             <th className="pb-3 pl-4">时间 (Time)</th>
                                             <th className="pb-3">方向 (Side)</th>
                                             <th className="pb-3 text-right">价格 (Price)</th>
@@ -408,29 +408,29 @@ export default function SettingsPage() {
                                     </thead>
                                     <tbody className="divide-y divide-[#2B3139]">
                                         {realTrades.map((trade) => (
-                                            <tr key={trade.id} className="group hover:bg-[#2B3139]/30 transition-colors">
-                                                <td className="py-3 pl-4 text-[#EAECEF]">
+                                            <tr key={trade.id} className="group hover:bg-gray-100 dark:bg-[#2B3139]/30 transition-colors">
+                                                <td className="py-3 pl-4 text-gray-900 dark:text-[#EAECEF]">
                                                     {new Date(trade.timestamp).toLocaleString()}
                                                 </td>
                                                 <td className="py-3">
                                                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                                                         trade.side === 'buy' 
-                                                        ? 'bg-green-500/10 text-[#0ECB81]' 
-                                                        : 'bg-red-500/10 text-[#F6465D]'
+                                                        ? 'bg-green-500/10 text-green-600 dark:text-[#0ECB81]' 
+                                                        : 'bg-red-500/10 text-red-600 dark:text-[#F6465D]'
                                                     }`}>
                                                         {trade.side.toUpperCase()}
                                                     </span>
                                                 </td>
-                                                <td className="py-3 text-right font-mono text-[#EAECEF]">
+                                                <td className="py-3 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
                                                     ${trade.price.toLocaleString()}
                                                 </td>
-                                                <td className="py-3 text-right font-mono text-[#EAECEF]">
+                                                <td className="py-3 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
                                                     {trade.amount}
                                                 </td>
-                                                <td className="py-3 text-right font-mono text-[#EAECEF]">
+                                                <td className="py-3 text-right font-mono text-gray-900 dark:text-[#EAECEF]">
                                                     ${trade.cost.toLocaleString()}
                                                 </td>
-                                                <td className="py-3 text-right pr-4 text-[#848E9C]">
+                                                <td className="py-3 text-right pr-4 text-gray-500 dark:text-[#848E9C]">
                                                     {trade.fee ? `${trade.fee.cost} ${trade.fee.currency}` : '-'}
                                                 </td>
                                             </tr>

@@ -4,6 +4,7 @@ import joblib
 import logging
 import os
 import sys
+import time
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -18,54 +19,120 @@ class PricePredictor:
     def __init__(self, models_dir="src/models/saved_models", symbol=None):
         self.models_dir = models_dir
         self.symbol = symbol
-        self.models = {}
+        self.models = {} # Structure: {horizon: {type: model}} e.g. {30: {'xgb': model, 'lgbm': model}}
         self.metrics = {}
-        self.horizons = [10, 30, 60]
+        self.horizons = [10, 30]
+        self.model_types = ['xgb', 'lgbm', 'rf'] # Supported types for ensemble
+        self.last_reload_time = 0
+        self.metrics_path = os.path.join(self.models_dir, "multicoin_metrics.json")
         self.load_models()
+
+    def check_reload(self):
+        """Check if metrics file has changed and reload if necessary"""
+        if os.path.exists(self.metrics_path):
+            try:
+                mtime = os.path.getmtime(self.metrics_path)
+                if mtime > self.last_reload_time:
+                    logger.info(f"Metrics file changed. Reloading models for {self.symbol}...")
+                    self.load_models()
+            except Exception as e:
+                logger.error(f"Error checking reload: {e}")
 
     def load_models(self):
         """Load trained models and metrics for all horizons"""
+        self.last_reload_time = time.time()
+        
         # Load metrics first to get thresholds
-        metrics_path = os.path.join(self.models_dir, "multicoin_metrics.json")
-        if not os.path.exists(metrics_path):
-             metrics_path = os.path.join(self.models_dir, "model_metrics.json")
+        if not os.path.exists(self.metrics_path):
+             # Fallback
+             old_metrics_path = os.path.join(self.models_dir, "model_metrics.json")
+             if os.path.exists(old_metrics_path):
+                 self.metrics_path = old_metrics_path
              
-        if os.path.exists(metrics_path):
+        if os.path.exists(self.metrics_path):
             try:
                 import json
-                with open(metrics_path, 'r') as f:
+                with open(self.metrics_path, 'r') as f:
                     self.metrics = json.load(f)
                     # If using multicoin metrics, extract for specific symbol if provided
-                    if self.symbol and self.symbol in self.metrics:
-                        self.metrics = self.metrics[self.symbol]
+                    if self.symbol:
+                        symbol_key = f"{self.symbol}USDT"
+                        if symbol_key in self.metrics:
+                            self.metrics = self.metrics[symbol_key]
+                        elif self.symbol in self.metrics:
+                             self.metrics = self.metrics[self.symbol]
                         
                 logger.info(f"Loaded model metrics (Symbol: {self.symbol})")
             except Exception as e:
                 logger.error(f"Error loading metrics: {e}")
         
         for h in self.horizons:
-            # Try symbol specific model first: xgb_BTCUSDT_30m.joblib
-            paths_to_try = []
-            if self.symbol:
-                paths_to_try.append(os.path.join(self.models_dir, f"xgb_{self.symbol}_{h}m.joblib"))
+            self.models[h] = {}
             
-            # Fallback to generic
-            paths_to_try.append(os.path.join(self.models_dir, f"xgb_model_{h}m.joblib"))
-            paths_to_try.append(os.path.join(self.models_dir, f"rf_model_{h}m.joblib"))
+            # Iterate through supported model types
+            for m_type in self.model_types:
+                paths_to_try = []
+                # 1. Specific: type_Symbol_horizon.joblib (e.g. xgb_BTCUSDT_30m.joblib)
+                if self.symbol:
+                    paths_to_try.append(os.path.join(self.models_dir, f"{m_type}_{self.symbol}_{h}m.joblib"))
+                
+                # 2. Generic: type_model_horizon.joblib (e.g. xgb_model_30m.joblib)
+                paths_to_try.append(os.path.join(self.models_dir, f"{m_type}_model_{h}m.joblib"))
+                
+                model_loaded = False
+                for path in paths_to_try:
+                    if os.path.exists(path):
+                        try:
+                            # Use joblib for most sklearn/xgboost models
+                            # For LSTM (keras), we might need special handling later
+                            self.models[h][m_type] = joblib.load(path)
+                            logger.info(f"Loaded {m_type} model for {h}m horizon from {os.path.basename(path)}")
+                            model_loaded = True
+                            break
+                        except Exception as e:
+                            logger.error(f"Error loading {m_type} model from {path}: {e}")
+                
+                if not model_loaded and m_type == 'xgb': # Warn only for primary model
+                    logger.warning(f"Primary {m_type} model not found for {h}m horizon (Symbol: {self.symbol})")
+
+    def predict_single_model(self, model, X, h, m_type):
+        """Helper to predict with a single model instance"""
+        try:
+            # Align features (same logic as before)
+            current_X = X.copy()
+            expected_cols = None
             
-            model_loaded = False
-            for path in paths_to_try:
-                if os.path.exists(path):
+            try:
+                if hasattr(model, 'named_steps') and 'selection' in model.named_steps:
+                    selector = model.named_steps['selection']
+                    if hasattr(selector, 'feature_names_in_'):
+                        expected_cols = selector.feature_names_in_
+                elif hasattr(model, 'feature_names_in_'):
+                    expected_cols = model.feature_names_in_
+                elif hasattr(model, 'estimators_'):
+                    if hasattr(model.estimators_[0], 'feature_names_in_'):
+                        expected_cols = model.estimators_[0].feature_names_in_
+                elif hasattr(model, 'get_booster'):
                     try:
-                        self.models[h] = joblib.load(path)
-                        logger.info(f"Loaded model for {h}m horizon from {os.path.basename(path)}")
-                        model_loaded = True
-                        break
-                    except Exception as e:
-                        logger.error(f"Error loading model from {path}: {e}")
-            
-            if not model_loaded:
-                logger.warning(f"Model file not found for {h}m horizon (Symbol: {self.symbol})")
+                        booster = model.get_booster()
+                        if hasattr(booster, 'feature_names') and booster.feature_names:
+                            expected_cols = booster.feature_names
+                    except: pass
+
+                if expected_cols is not None:
+                    missing_cols = set(expected_cols) - set(current_X.columns)
+                    if missing_cols:
+                        for c in missing_cols: current_X[c] = 0
+                    current_X = current_X[expected_cols]
+            except Exception as e:
+                logger.warning(f"Feature alignment warning ({m_type}): {e}")
+
+            # Predict
+            prob = model.predict_proba(current_X)[0][1]
+            return prob
+        except Exception as e:
+            logger.error(f"Prediction failed for {h}m ({m_type}): {e}")
+            return None
 
     def predict_all(self, recent_data: pd.DataFrame):
         """
@@ -73,6 +140,8 @@ class PricePredictor:
         :param recent_data: DataFrame with at least 50-100 recent 1m candles
         :return: Dict with predictions
         """
+        self.check_reload()
+        
         if recent_data.empty:
             return None
             
@@ -136,53 +205,21 @@ class PricePredictor:
         
         predictions = {}
         for h in self.horizons:
-            if h in self.models:
+            if h in self.models and self.models[h]:
                 try:
-                    model = self.models[h]
+                    # Ensemble Prediction
+                    probs = []
+                    for m_type, model in self.models[h].items():
+                        p = self.predict_single_model(model, X, h, m_type)
+                        if p is not None:
+                            probs.append(p)
                     
-                    # Align features with model expectations
-                    # The model might be a Pipeline or a Classifier
-                    current_X = X.copy()
-                    expected_cols = None
-                    
-                    try:
-                        # Case 1: Pipeline
-                        if hasattr(model, 'named_steps') and 'selection' in model.named_steps:
-                            selector = model.named_steps['selection']
-                            if hasattr(selector, 'feature_names_in_'):
-                                expected_cols = selector.feature_names_in_
-                        # Case 2: Direct Classifier
-                        elif hasattr(model, 'feature_names_in_'):
-                            expected_cols = model.feature_names_in_
-                        # Case 3: VotingClassifier (inside Pipeline or direct)
-                        elif hasattr(model, 'estimators_'):
-                            # Try to get from first estimator
-                            if hasattr(model.estimators_[0], 'feature_names_in_'):
-                                expected_cols = model.estimators_[0].feature_names_in_
-                        # Case 4: XGBoost (sklearn API) might store it in booster
-                        elif hasattr(model, 'get_booster'):
-                            try:
-                                booster = model.get_booster()
-                                if hasattr(booster, 'feature_names') and booster.feature_names:
-                                    expected_cols = booster.feature_names
-                            except Exception as e:
-                                logger.warning(f"Failed to get feature names from booster: {e}")
-
-                        if expected_cols is not None:
-                            # Reorder and filter columns
-                            missing_cols = set(expected_cols) - set(current_X.columns)
-                            if missing_cols:
-                                logger.warning(f"Missing columns for {h}m model: {missing_cols}. Filling with 0.")
-                                for c in missing_cols:
-                                    current_X[c] = 0
-                            
-                            # Select only expected columns in correct order
-                            current_X = current_X[expected_cols]
-                            
-                    except Exception as e:
-                        logger.warning(f"Could not align feature columns: {e}")
-
-                    prob = model.predict_proba(current_X)[0][1] # Probability of class 1 (Up)
+                    if not probs:
+                        logger.warning(f"No valid predictions for {h}m horizon")
+                        continue
+                        
+                    # Average Probability (Soft Voting)
+                    prob = float(np.mean(probs))
                     
                     # Determine direction based on confidence thresholds
                     # Since we trained on filtered data, "0.5" might be ambiguous.
@@ -208,7 +245,8 @@ class PricePredictor:
                         "horizon_minutes": h,
                         "confidence": float(confidence_score),
                         "is_high_confidence": is_high_conf,
-                        "threshold_used": float(threshold)
+                        "threshold_used": float(threshold),
+                        "models_used": list(self.models[h].keys())
                     }
                 except Exception as e:
                     logger.error(f"Prediction failed for {h}m: {e}")

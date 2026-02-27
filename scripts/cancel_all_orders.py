@@ -2,13 +2,14 @@ import os
 import sys
 import logging
 import ccxt
+import time
 from dotenv import load_dotenv
 
 # Add project root to path
 sys.path.append(os.getcwd())
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Config
@@ -17,6 +18,17 @@ PROXIES = {
     'http': PROXY_URL,
     'https': PROXY_URL
 }
+
+# New Strategy Parameters
+SL_PCT = 0.02  # 2%
+TP_PCT = 0.06  # 6%
+
+# Monitored Symbols
+SYMBOLS = [
+    'BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'BNB/USDT:USDT', 'DOGE/USDT:USDT',
+    'XRP/USDT:USDT', '1000PEPE/USDT:USDT', 'AVAX/USDT:USDT', 'LINK/USDT:USDT', 'ADA/USDT:USDT',
+    'TRX/USDT:USDT', 'LDO/USDT:USDT', 'BCH/USDT:USDT', 'OP/USDT:USDT'
+]
 
 def get_exchange():
     load_dotenv()
@@ -27,7 +39,7 @@ def get_exchange():
         logger.error("API credentials missing")
         return None
         
-    exchange = ccxt.binance({
+    exchange = ccxt.binanceusdm({
         'apiKey': api_key,
         'secret': secret,
         'enableRateLimit': True,
@@ -37,42 +49,95 @@ def get_exchange():
     })
     return exchange
 
-def cancel_all_orders():
+def reset_orders():
     exchange = get_exchange()
     if not exchange:
         return
         
     try:
-        # 1. Fetch all open orders (this can be slow for many symbols, so better to iterate active ones if known)
-        # But for safety, let's try to fetch open orders for Top 30 symbols we know we traded
-        symbols = [
-            'BTC/USDT:USDT', 'ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'AVAX/USDT:USDT',
-            'XRP/USDT:USDT', 'DOGE/USDT:USDT', 'ADA/USDT:USDT', 'TRX/USDT:USDT', 'LINK/USDT:USDT',
-            'LTC/USDT:USDT', 'DOT/USDT:USDT', 'BCH/USDT:USDT', 'SHIB/USDT:USDT', 'MATIC/USDT:USDT',
-            'NEAR/USDT:USDT', 'APT/USDT:USDT', 'FIL/USDT:USDT', 'ATOM/USDT:USDT', 'ARB/USDT:USDT',
-            'OP/USDT:USDT', 'ETC/USDT:USDT', 'ICP/USDT:USDT', 'RNDR/USDT:USDT', 'INJ/USDT:USDT',
-            'STX/USDT:USDT', 'LDO/USDT:USDT', 'VET/USDT:USDT', 'XLM/USDT:USDT', 'PEPE/USDT:USDT'
-        ]
+        exchange.load_markets()
+        logger.info("Connected to Binance Futures")
         
-        logger.info(f"Checking {len(symbols)} symbols for open orders...")
+        logger.info(f"Targeting {len(SYMBOLS)} symbols: {SYMBOLS}")
         
-        for symbol in symbols:
+        # 1. Cancel All Orders
+        for symbol in SYMBOLS:
             try:
-                orders = exchange.fetch_open_orders(symbol)
-                if orders:
-                    logger.info(f"Found {len(orders)} open orders for {symbol}. Cancelling...")
-                    exchange.cancel_all_orders(symbol)
-                    logger.info(f"Cancelled all orders for {symbol}")
-                else:
-                    # logger.info(f"No open orders for {symbol}")
-                    pass
+                # Cancel all open orders
+                exchange.cancel_all_orders(symbol)
+                logger.info(f"[{symbol}] Cancelled all open orders.")
             except Exception as e:
-                logger.error(f"Error checking/cancelling {symbol}: {e}")
+                logger.warning(f"[{symbol}] Cancel failed (might be no orders): {e}")
+
+        # 2. Fetch Active Positions and Reset SL/TP
+        logger.info("Fetching active positions to reset SL/TP...")
+        try:
+            # fetch_positions might behave differently depending on exchange
+            # For Binance, fetch_positions(symbols) is supported
+            positions = exchange.fetch_positions(SYMBOLS)
+            
+            active_positions = []
+            for pos in positions:
+                amt = float(pos['contracts'])
+                if amt > 0:
+                    active_positions.append(pos)
+            
+            logger.info(f"Found {len(active_positions)} active positions.")
+            
+            for pos in active_positions:
+                symbol = pos['symbol']
+                side = pos['side'] # 'long' or 'short'
+                entry_price = float(pos['entryPrice'])
+                amount = float(pos['contracts']) # Position size
                 
-        logger.info("Finished cancelling orders.")
+                logger.info(f"Resetting orders for {symbol} ({side} {amount} @ {entry_price})")
+                
+                # Calculate New SL/TP
+                sl_price = 0.0
+                tp_price = 0.0
+                
+                if side == 'long':
+                    sl_price = entry_price * (1 - SL_PCT)
+                    tp_price = entry_price * (1 + TP_PCT)
+                    sl_side = 'sell'
+                else: # short
+                    sl_price = entry_price * (1 + SL_PCT)
+                    tp_price = entry_price * (1 - TP_PCT)
+                    sl_side = 'buy'
+                
+                # Precision
+                sl_price = exchange.price_to_precision(symbol, sl_price)
+                tp_price = exchange.price_to_precision(symbol, tp_price)
+                
+                # Place STOP_MARKET (SL)
+                try:
+                    params = {
+                        'stopPrice': sl_price,
+                        'reduceOnly': True
+                    }
+                    exchange.create_order(symbol, 'STOP_MARKET', sl_side, amount, None, params)
+                    logger.info(f"[{symbol}] Placed New SL at {sl_price}")
+                except Exception as e:
+                    logger.error(f"[{symbol}] Failed to place SL: {e}")
+                
+                # Place TAKE_PROFIT_MARKET (TP)
+                try:
+                    params = {
+                        'stopPrice': tp_price,
+                        'reduceOnly': True
+                    }
+                    exchange.create_order(symbol, 'TAKE_PROFIT_MARKET', sl_side, amount, None, params)
+                    logger.info(f"[{symbol}] Placed New TP at {tp_price}")
+                except Exception as e:
+                    logger.error(f"[{symbol}] Failed to place TP: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error processing positions: {e}")
+            
+        logger.info("Reset complete.")
         
     except Exception as e:
         logger.error(f"Global error: {e}")
 
 if __name__ == "__main__":
-    cancel_all_orders()
+    reset_orders()

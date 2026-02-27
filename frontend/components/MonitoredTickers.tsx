@@ -42,7 +42,7 @@ export const MonitoredTickers: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="h-full bg-[#1E2329] rounded-xl border border-[#2B3139] flex items-center justify-center text-[#848E9C]">
+            <div className="h-full bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] flex items-center justify-center text-gray-500 dark:text-[#848E9C]">
                 <span className="animate-pulse flex items-center gap-2">
                     <Activity className="w-4 h-4 animate-spin" />
                     Loading Market Data...
@@ -52,25 +52,25 @@ export const MonitoredTickers: React.FC = () => {
     }
 
     return (
-        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] p-4 overflow-hidden h-full flex flex-col justify-center relative group">
+        <div className="bg-white dark:bg-[#1E2329] rounded-xl border border-gray-200 dark:border-[#2B3139] p-4 overflow-hidden h-full flex flex-col justify-center relative group">
              <div className="flex items-center justify-between mb-3 px-1">
-                <h3 className="text-sm font-semibold text-[#EAECEF] flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-[#F0B90B]" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-[#EAECEF] flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
                     Monitored Markets (24h)
                 </h3>
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 text-[10px] text-[#848E9C]">
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-[#848E9C]">
                         <div className="w-1.5 h-1.5 rounded-full bg-[#0ECB81]"></div>
                         <span>Live</span>
                     </div>
-                    <span className="text-xs text-[#848E9C] bg-[#2B3139] px-2 py-0.5 rounded-md font-mono border border-[#363C45]">
+                    <span className="text-xs text-gray-500 dark:text-[#848E9C] bg-gray-100 dark:bg-[#2B3139] px-2 py-0.5 rounded-md font-mono border border-[#363C45]">
                         {tickers.length} Assets
                     </span>
                 </div>
             </div>
             
             <div 
-                className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-[#363C45] scrollbar-track-[#1E2329] hover:scrollbar-thumb-[#474D57] transition-colors"
+                className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-[#363C45] scrollbar-track-gray-100 dark:scrollbar-track-[#1E2329] hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-[#474D57] transition-colors"
                 ref={scrollRef}
             >
                 {tickers.map((ticker) => {
@@ -88,26 +88,26 @@ export const MonitoredTickers: React.FC = () => {
                     return (
                         <div 
                             key={ticker.symbol} 
-                            className="min-w-[140px] p-3 rounded-lg bg-[#161A1E] border border-[#2B3139] hover:border-[#F0B90B]/50 transition-all hover:-translate-y-0.5 flex-shrink-0 cursor-pointer group/card relative overflow-hidden"
+                            className="min-w-[140px] p-3 rounded-lg bg-gray-50 dark:bg-[#161A1E] border border-gray-200 dark:border-[#2B3139] hover:border-[#F0B90B]/50 transition-all hover:-translate-y-0.5 flex-shrink-0 cursor-pointer group/card relative overflow-hidden"
                         >
                             {/* Subtle Background Gradient for Gainers/Losers */}
                             <div className={`absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-${isUp ? '[#0ECB81]' : '[#F6465D]'} to-transparent opacity-[0.03] group-hover/card:opacity-[0.08] transition-opacity pointer-events-none rounded-tr-lg`}></div>
 
                             <div className="flex justify-between items-start mb-2">
-                                <span className="font-bold text-sm text-[#EAECEF] tracking-tight">{displaySymbol}</span>
-                                <div className={`flex items-center gap-0.5 text-xs font-medium ${isUp ? 'text-[#0ECB81]' : 'text-[#F6465D]'}`}>
+                                <span className="font-bold text-sm text-gray-900 dark:text-[#EAECEF] tracking-tight">{displaySymbol}</span>
+                                <div className={`flex items-center gap-0.5 text-xs font-medium ${isUp ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]'}`}>
                                     {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                                     {Math.abs(priceChange).toFixed(2)}%
                                 </div>
                             </div>
                             
-                            <div className="text-lg font-mono font-medium text-[#EAECEF] mb-2 tracking-tight">
+                            <div className="text-lg font-mono font-medium text-gray-900 dark:text-[#EAECEF] mb-2 tracking-tight">
                                 ${formattedPrice}
                             </div>
                             
-                            <div className="text-[10px] text-[#848E9C] flex justify-between items-center border-t border-[#2B3139] pt-2 mt-auto">
+                            <div className="text-[10px] text-gray-500 dark:text-[#848E9C] flex justify-between items-center border-t border-gray-200 dark:border-[#2B3139] pt-2 mt-auto">
                                 <span className="uppercase">Vol 24h</span>
-                                <span className="font-mono text-[#EAECEF]">{(parseFloat(ticker.quoteVolume) / 1000000).toFixed(1)}M</span>
+                                <span className="font-mono text-gray-900 dark:text-[#EAECEF]">{(parseFloat(ticker.quoteVolume) / 1000000).toFixed(1)}M</span>
                             </div>
                         </div>
                     );

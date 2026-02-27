@@ -109,8 +109,8 @@ class StrategyConfig(BaseModel):
     ema_period: int = 200
     rsi_period: int = 14
     ml_threshold: float = 0.75
-    leverage: int = Field(1, ge=1, le=10)
-    max_portfolio_leverage: int = Field(10, ge=1, le=10)
+    leverage: int = Field(1, ge=1, le=20)
+    max_portfolio_leverage: int = Field(10, ge=1, le=20)
 
 class TraderConfig(BaseModel):
     mode: str = "paper"  # "paper" or "real"
@@ -175,13 +175,9 @@ if trader_config.proxy_url:
 
 # 30 Coins List for Monitoring
 MONITORED_SYMBOLS = [
-    'BTC/USDT:USDT', 'ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'AVAX/USDT:USDT',
-    'XRP/USDT:USDT', 'DOGE/USDT:USDT', 'ADA/USDT:USDT', 'TRX/USDT:USDT', 'LINK/USDT:USDT',
-    'LTC/USDT:USDT', 'DOT/USDT:USDT', 'BCH/USDT:USDT', 'SHIB/USDT:USDT', 'MATIC/USDT:USDT',
-    'NEAR/USDT:USDT', 'APT/USDT:USDT', 'FIL/USDT:USDT', 'ATOM/USDT:USDT', 'ARB/USDT:USDT',
-    'OP/USDT:USDT', 'ETC/USDT:USDT', 'ICP/USDT:USDT', 'RNDR/USDT:USDT', 'INJ/USDT:USDT',
-    'STX/USDT:USDT', 'LDO/USDT:USDT', 'VET/USDT:USDT', 'XLM/USDT:USDT', 'PEPE/USDT:USDT',
-    'OPN/USDT:USDT'
+    'BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'BNB/USDT:USDT', 'DOGE/USDT:USDT',
+    'XRP/USDT:USDT', '1000PEPE/USDT:USDT', 'AVAX/USDT:USDT', 'LINK/USDT:USDT', 'ADA/USDT:USDT',
+    'TRX/USDT:USDT', 'LDO/USDT:USDT', 'BCH/USDT:USDT', 'OP/USDT:USDT'
 ]
 
 # Initialize Trader based on loaded config
@@ -214,8 +210,8 @@ bot_config = BotConfig(confidence_threshold=0.75, notification_level="HIGH_ONLY"
 latest_signal = 0  # 0: Hold, 1: Buy, -1: Sell
 last_notification = {"signal": 0, "timestamp": 0}
 
-METRICS_FILE = os.path.join(os.path.dirname(__file__), '../../src/models/saved_models/model_metrics.json')
-DATA_FILE = os.path.join(os.path.dirname(__file__), '../../src/data/btc_history_1m.csv')
+METRICS_FILE = os.path.join(os.path.dirname(__file__), '../../src/models/saved_models/multicoin_metrics.json')
+DATA_DIR = os.path.join(os.path.dirname(__file__), '../../data/raw')
 
 # WebSocket Connection Manager
 class ConnectionManager:
@@ -403,28 +399,22 @@ async def send_hourly_monitor_report():
         beijing_tz = pytz.timezone('Asia/Shanghai')
         bj_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
         
+        title = "【实盘交易监控日报】(Hourly)"
         msg = (
-            f"【实盘交易监控日报】(Hourly)\n"
-            f"----------------\n"
-            f"💰 总权益: ${equity:.2f}\n"
-            f"   (初始: ${initial_balance:.2f})\n\n"
-            f"📦 总持仓市值: ${total_position_value:.2f}\n"
-            f"   (当前持仓敞口)\n\n"
-            f"📈 未实现盈亏: {unrealized_pnl:+.2f}\n"
-            f"   (浮动盈亏)\n\n"
-            f"💵 已实现盈亏: {realized_pnl:+.2f}\n"
-            f"   ({roi:.2f}% ROI, 手续费: ${total_fees:.2f})\n\n"
-            f"🏆 胜率: {win_rate:.1f}%\n"
-            f"   ({total_trades} 笔交易)\n\n"
-            f"📝 当前挂单: {open_orders_count}\n"
-            f"   (普通 / 算法)\n"
-            f"----------------\n"
+            f"💰 权益: **${equity:.2f}** | 📦 市值: **${total_position_value:.2f}**\n"
+            f"(初始: ${initial_balance:.2f} | 敞口: {total_position_value/equity*100:.1f}%)\n"
+            f"📈 未实现: **{unrealized_pnl:+.2f}** | 💵 已实现: **{realized_pnl:+.2f}**\n"
+            f"(ROI: {roi:.2f}% | 手续费: ${total_fees:.2f})\n"
+            f"🏆 胜率: **{win_rate:.1f}%** ({total_trades}笔) | 📝 挂单: **{open_orders_count}**\n"
         )
         
         # Add detailed positions if any
         if positions:
-            msg += "持仓详情:\n"
-            for sym, pos in positions.items():
+            msg += "\n"
+            # Sort positions by unrealized_pnl in descending order (High to Low)
+            sorted_positions = sorted(positions.items(), key=lambda item: item[1].get('unrealized_pnl', 0.0), reverse=True)
+            
+            for sym, pos in sorted_positions:
                 side = "做多" if pos.get('side') == 'long' else "做空"
                 pnl = pos.get('unrealized_pnl', 0.0)
                 roi_val = pos.get('pnl_pct', 0.0)
@@ -438,17 +428,28 @@ async def send_hourly_monitor_report():
                 # Ensure symbol is clean (though get_positions should have cleaned it)
                 clean_sym = sym.replace(':USDT', '')
                 
+                # Colorize PnL: Red for positive, Blue for negative
+                pnl_str = f"{pnl:+.2f}U"
+                if pnl > 0:
+                    # Red and Bold
+                    pnl_display = f"<font color='red'>**{pnl_str}**</font>"
+                elif pnl < 0:
+                    # Blue and Bold
+                    pnl_display = f"<font color='blue'>**{pnl_str}**</font>"
+                else:
+                    pnl_display = f"**{pnl_str}**"
+
                 msg += (
-                    f"- {clean_sym} {lev}x {side}\n"
-                    f"  持仓: ${pos_val:.2f} | PnL: {pnl:+.2f}U ({roi_val:+.2f}%)\n"
-                    f"  开仓: {entry_price:.4f} | 现价: {mark_price:.4f}\n"
+                    f"**{clean_sym} {lev}x {side}**\n"
+                    f"持仓: **${pos_val:.2f}** | PnL: {pnl_display} ({roi_val:+.2f}%)\n"
+                    f"开仓: {entry_price:.4f} | 现价: {mark_price:.4f}\n"
                 )
-            msg += "----------------\n"
+            msg += "\n"
 
         msg += f"时间: {bj_time}"
         
         logger.info(f"Preparing to send hourly report to Feishu: {len(msg)} chars")
-        await loop.run_in_executor(None, feishu_bot.send_text, msg)
+        await loop.run_in_executor(None, feishu_bot.send_markdown, msg, title)
         logger.info("Sent hourly monitor report to Feishu")
         return {"status": "success", "message": "Report sent"}
         
@@ -465,10 +466,11 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(daily_update_task, CronTrigger(hour=0, minute=0))
     
     # Register Maintenance Tasks (Daily Data Update & 3-Day Retraining)
-    register_maintenance_tasks(scheduler)
+    # DEPRECATED: daily_update_task (DailyUpdateManager) handles both data update and retraining
+    # register_maintenance_tasks(scheduler)
     
-    # Schedule real-time data broadcast (every 10 seconds to avoid 418)
-    scheduler.add_job(broadcast_market_data, IntervalTrigger(seconds=10))
+    # Schedule real-time data broadcast (every 3 seconds for lower latency)
+    scheduler.add_job(broadcast_market_data, IntervalTrigger(seconds=3))
     
     # Hourly Monitor Report
     # Run every 30 minutes (minute=0, 30)
@@ -570,20 +572,31 @@ async def lifespan(app: FastAPI):
             can_start = (time.time() - _last_bot_start_ts) > 300
             if stale and can_start:
                 try:
-                    # Check if process is already running to avoid duplicates
+                    # Check if process is already running
                     # Using pgrep -f run_multicoin_bot.py
+                    process_running = False
                     try:
                         check = subprocess.run(["pgrep", "-f", "run_multicoin_bot.py"], capture_output=True)
                         if check.returncode == 0:
-                            logger.info("run_multicoin_bot.py is already running (pid found).")
-                            stale = False # Override stale if process exists
+                            process_running = True
+                            logger.info("run_multicoin_bot.py is running (pid found).")
                     except:
                         pass
                 
                     if stale:
+                        if process_running:
+                            logger.warning("Process is running but log is stale. Killing process...")
+                            subprocess.run(["pkill", "-f", "run_multicoin_bot.py"])
+                            time.sleep(2) # Wait for kill
+
+                        logger.info("Watchdog starting run_multicoin_bot.py...")
+                        env = os.environ.copy()
+                        env["PYTHONPATH"] = os.getcwd()
+                        
                         subprocess.Popen(
-                            ["python", "scripts/run_multicoin_bot.py"],
+                            [sys.executable, "scripts/run_multicoin_bot.py"],
                             cwd=os.getcwd(),
+                            env=env,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL
                         )
@@ -1171,28 +1184,84 @@ async def get_model_info():
     try:
         with open(METRICS_FILE, 'r') as f:
             metrics = json.load(f)
+            
+        # Add training_date if missing, using file modification time
+        if "training_date" not in metrics:
+            mtime = os.path.getmtime(METRICS_FILE)
+            metrics["training_date"] = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            
         return metrics
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading model metrics: {str(e)}")
 
 @app.get("/api/v1/data-summary")
 async def get_data_summary():
-    if not os.path.exists(DATA_FILE):
-        return {"error": "Data file not found"}
+    if not os.path.exists(DATA_DIR):
+        return {"error": f"Data directory not found: {DATA_DIR}"}
     
     try:
-        # Read only header and some meta if possible, but pandas is fast enough
-        df = pd.read_csv(DATA_FILE)
-        if df.empty:
+        total_rows = 0
+        total_size = 0
+        start_dates = []
+        end_dates = []
+        
+        loop = asyncio.get_running_loop()
+        
+        # Helper to process one file
+        def process_file(filename):
+            path = os.path.join(DATA_DIR, filename)
+            if not filename.endswith('.csv'):
+                return None
+            
+            # Filter only monitored symbols to avoid clutter
+            # monitored_clean = [s.replace('/', '').split(':')[0] for s in MONITORED_SYMBOLS]
+            # symbol = filename.split('_')[0]
+            # if symbol not in monitored_clean:
+            #    return None
+                
+            try:
+                # Use pandas to read just what we need
+                df = pd.read_csv(path)
+                if df.empty:
+                    return None
+                    
+                return {
+                    "rows": len(df),
+                    "start": str(df.iloc[0]['datetime']),
+                    "end": str(df.iloc[-1]['datetime']),
+                    "size": os.path.getsize(path)
+                }
+            except:
+                return None
+
+        # Process all files in parallel
+        tasks = []
+        files = [f for f in os.listdir(DATA_DIR) if f.endswith('.csv') and '1m' in f]
+        
+        for f in files:
+            tasks.append(loop.run_in_executor(None, process_file, f))
+            
+        results = await asyncio.gather(*tasks)
+        
+        for res in results:
+            if res:
+                total_rows += res['rows']
+                total_size += res['size']
+                start_dates.append(res['start'])
+                end_dates.append(res['end'])
+        
+        if not start_dates:
              return {"total_rows": 0}
-             
+
         return {
-            "total_rows": len(df),
-            "start_date": str(df.iloc[0]['datetime']),
-            "end_date": str(df.iloc[-1]['datetime']),
-            "file_size_mb": round(os.path.getsize(DATA_FILE) / (1024 * 1024), 2)
+            "total_rows": total_rows,
+            "start_date": min(start_dates),
+            "end_date": max(end_dates),
+            "file_size_mb": round(total_size / (1024 * 1024), 2),
+            "monitored_symbols_count": len([r for r in results if r])
         }
     except Exception as e:
+        logger.error(f"Error in data summary: {e}")
         return {"error": str(e)}
 
 # Paper Trading Endpoints

@@ -85,14 +85,119 @@
     - 机器人逻辑: [scripts/run_multicoin_bot.py](file:///Users/weihui/Desktop/币安工具/scripts/run_multicoin_bot.py)
     - 交易核心: [src/trader/real_trader.py](file:///Users/weihui/Desktop/币安工具/src/trader/real_trader.py)
 
+### 1.19 后端 API 连接中断导致前端无数据 (Uvicorn Restart)
+- **问题**: 前端一直显示“连接中”或无持仓信息，但后台交易机器人 `run_multicoin_bot.py` 正常运行且 `real_trading_status.json` 持续更新。
+- **原因**:
+    1. 后端 API 服务 (`uvicorn src.api.main:app`) 进程意外退出或未启动，导致前端无法请求接口。
+    2. 看门狗 (`services_watchdog`) 仅检测了定时任务调度和交易机器人，未覆盖 API 服务的存活状态。
+- **修复**:
+    - **重启服务**: 重新启动 `uvicorn` 服务，恢复 API 接口响应。
+    - **增强看门狗**: 在 `src/api/main.py` 的 `services_watchdog` 中增加对 `uvicorn` 进程的检测，若缺失则自动拉起（待实现）。
+    - **优化启动脚本**: 完善 `start_services.sh`，确保 API 与 Bot 同时启动。
+- **涉及代码**:
+    - 后端入口: [src/api/main.py](file:///Users/weihui/Desktop/币安工具/src/api/main.py)
+- **验证**:
+    - `curl http://127.0.0.1:8000/api/v1/status` 返回 200 OK。
+    - 前端页面刷新后立即显示“已连接”。
+
+### 1.20 前端杠杆显示错误与飞书消息优化 (Leverage Display & Feishu Formatting)
+- **问题**: 
+    1. 前端页面持仓杠杆显示错误（如实际 5x 显示为 1x）。
+    2. 飞书监控日报未按收益排序，重点不突出。
+- **原因**:
+    1. `RealTrader.get_positions` 获取杠杆时优先使用了默认值 `self.leverage`，而未充分利用交易所返回的 `info` 字段中的实际杠杆。
+    2. `send_hourly_monitor_report` 遍历持仓时未进行排序和格式化处理。
+- **修复**:
+    - **杠杆获取优化**: 修改 `src/trader/real_trader.py`，优先从 `pos['info']['leverage']` 获取真实杠杆值。
+    - **消息格式化**: 修改 `src/api/main.py`，将持仓按 `unrealized_pnl` 从高到低排序，并对收益数字进行 **加粗** 显示。
+    - **立即生效**: 重启后端服务并增加手动触发接口，立即发送更新后的飞书消息。
+- **涉及代码**:
+    - 交易核心: [src/trader/real_trader.py](file:///Users/weihui/Desktop/币安工具/src/trader/real_trader.py)
+    - 监控报告: [src/api/main.py](file:///Users/weihui/Desktop/币安工具/src/api/main.py)
+- **验证**:
+    - 手动触发 `/api/v1/test-report`，飞书收到按收益排序且加粗的消息。
+    - 前端页面持仓杠杆显示正确。
+
+### 1.21 移动止损与激进仓位策略 (Trailing Stop & Aggressive Sizing)
+- **问题**: 
+    1. 缺乏自动锁利机制（移动止损），在趋势反转时容易回吐利润。
+    2. 20U 极小仓位无法满足 10000U 年度目标。
+- **原因**:
+    1. `RealTrader` 中虽然有 `manage_position` 骨架但未在 `run_multicoin_bot.py` 主循环中调用。
+    2. 原有 `risk_per_trade` 设置过低 (2%) 且受限于最小下单金额。
+- **修复**:
+    1. **移动止损集成**: 在 `scripts/run_multicoin_bot.py` 主循环中增加对现有持仓的 `trader.manage_position` 调用，实现 1% 触发保本损、2% 触发利润锁定。
+    2. **仓位调整**: 修改 `config/strategy_config.json`，将 `risk_per_trade` 提升至 **0.35 (35%)**，采用固定比例复利模式。
+    3. **策略微调**: 更新 `strategy_explanation.md`，明确激进增长模式下的风险控制（依靠硬止损和移动止损）。
+- **涉及代码**:
+    - 主程序: [scripts/run_multicoin_bot.py](file:///Users/weihui/Desktop/币安工具/scripts/run_multicoin_bot.py)
+    - 交易核心: [src/trader/real_trader.py](file:///Users/weihui/Desktop/币安工具/src/trader/real_trader.py)
+    - 配置文件: [config/strategy_config.json](file:///Users/weihui/Desktop/币安工具/config/strategy_config.json)
+
+### 1.22 飞书消息富文本支持 (Interactive Card Markdown)
+- **问题**: 飞书普通文本消息 (`text` 类型) 不支持 Markdown 语法 (`**bold**`)，导致监控日报中的加粗标记失效，显示为原始字符。
+- **原因**: 飞书 `send_text` 接口仅支持纯文本，需升级为 `interactive` (卡片消息) 或 `post` (富文本) 类型才能支持 Markdown 渲染。
+- **修复**:
+    - **升级发送接口**: 在 `src/notification/feishu.py` 中新增 `send_markdown` 方法，封装飞书交互式卡片 (`interactive`) 结构。
+    - **启用 Markdown**: 使用 `lark_md` 标签包裹消息内容，支持加粗、链接等富文本格式。
+    - **调整日报发送**: 修改 `src/api/main.py` 调用新接口发送监控日报，并优化标题显示。
+- **涉及代码**:
+    - 飞书适配器: [src/notification/feishu.py](file:///Users/weihui/Desktop/币安工具/src/notification/feishu.py)
+    - 监控逻辑: [src/api/main.py](file:///Users/weihui/Desktop/币安工具/src/api/main.py)
+- **验证**:
+    - `/api/v1/test-report` 发送的消息正确渲染加粗的 PnL 数值。
+
+### 1.23 仓位杠杆计算修复与飞书格式精简 (Leveraged Sizing & Feishu Format)
+- **问题**: 
+    1. 仓位大小仍偏小 (~93U)，未达到激进增长预期的 ~465U，原因是计算名义价值时未乘杠杆倍数。
+    2. 飞书消息中 ROI 也被加粗，用户认为格式混乱，要求仅加粗“未实现盈亏”。
+- **原因**:
+    1. `run_multicoin_bot.py` 原逻辑为 `total_equity * position_pct`，这是本金占用模式，未体现全仓杠杆放大。
+    2. `src/api/main.py` 中 Markdown 格式包含了 ROI 的加粗。
+- **修复**:
+    - **杠杆放大**: 修改 `scripts/run_multicoin_bot.py`，公式更新为 `planned_notional = total_equity * position_pct * target_leverage`。
+        - 示例: 266U * 35% * 5x ≈ 465U 名义价值。
+    - **格式精简**: 修改 `src/api/main.py`，仅对 `pnl` 数值应用 `**` 加粗，移除 ROI 的加粗和颜色标签。
+- **涉及代码**:
+    - 机器人逻辑: [scripts/run_multicoin_bot.py](file:///Users/weihui/Desktop/币安工具/scripts/run_multicoin_bot.py)
+    - 监控报告: [src/api/main.py](file:///Users/weihui/Desktop/币安工具/src/api/main.py)
+- **验证**:
+    - 重启 `run_multicoin_bot.py` 后日志显示 "Position Sizing ... Planned=$465.50"。
+    - 手动触发 `/api/v1/test-report`，飞书消息仅 PnL 数值加粗。
+
+### 1.24 重置所有旧条件单并执行新策略 (Reset Old Orders for New Strategy)
+- **原因**:
+    - 用户确认当前盈亏比可行，要求撤销历史旧委托，按新策略（2%止损/6%止盈）执行。
+- **修复**:
+    - **脚本重写**: 重写 `scripts/cancel_all_orders.py`，针对 14 个监控币种撤销所有挂单。
+    - **智能重置**: 增加 `reset_orders` 函数，自动识别当前持仓，并按新策略参数（SL 2%, TP 6%）重新挂出 `STOP_MARKET` 和 `TAKE_PROFIT_MARKET` 订单。
+    - **安全机制**: 使用 `reduceOnly=True` 确保止盈止损不反向开仓。
+- **涉及代码**:
+    - [scripts/cancel_all_orders.py](file:///Users/weihui/Desktop/币安工具/scripts/cancel_all_orders.py)
+- **验证**:
+    - 脚本运行成功，日志显示 "Reset complete"。
+    - 3 个持仓（TRX, ETH, XRP）的止盈止损单已重置。
+
+### 1.25 飞书消息盈亏颜色优化 (Feishu PnL Color Formatting)
+- **原因**:
+    - 用户要求飞书消息中每个仓位的未实现盈亏按颜色区分：正数用红色加粗，负数用蓝色加粗，以提高辨识度。
+- **修复**:
+    - **Markdown 渲染**: 修改 `src/api/main.py` 中的 `send_hourly_monitor_report` 函数。
+    - **条件格式**: 使用 `<font color='red'>` 和 `<font color='blue'>` 标签对 PnL 数值进行条件渲染。
+- **涉及代码**:
+    - [src/api/main.py](file:///Users/weihui/Desktop/币安工具/src/api/main.py)
+- **验证**:
+    - 触发测试报告，确认正收益显示红色，负收益显示蓝色。
+
 ## 2. 系统配置参数 (Configuration)
 
 ### 2.1 交易参数
 - **Symbol**: `BTC/USDT:USDT` (CCXT 统一格式，指代 USDT 本位永续合约)
-- **Leverage**: 动态 10x - 20x (基于 TrendML 策略信心度)
+- **Leverage**: 基础 5x (最大 10x)
+- **Position Sizing**: 固定比例 35% (Aggressive Growth for 10000U Target)
 - **Risk Management**:
-    - Stop Loss (SL): 硬止损 (2.0 ATR)，配合移动止损。
-    - Take Profit (TP): 软止盈 (3.0 ATR)，动态持有。
+    - Stop Loss (SL): 硬止损 (2.0 ATR) + 移动止损 (Trailing Stop)。
+    - Take Profit (TP): 软止盈 (3.0 ATR) + 动态回撤止盈 (Retracement)。
 
 ### 2.2 策略逻辑 (TrendMLStrategy)
 - **入场**: 趋势 (EMA200) + 动量 (MACD/RSI) + ML 模型预测 (>0.75 概率) 共振。

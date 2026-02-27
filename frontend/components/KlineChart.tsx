@@ -269,26 +269,26 @@ export const KlineChart: React.FC<KlineChartProps> = ({
             />
             {/* Tooltip Overlay - Binance Style Header */}
             <div 
-                className="absolute top-2 left-2 flex gap-3 bg-[#1E2329]/90 p-1.5 rounded text-[#848E9C] font-mono text-xs select-none pointer-events-none shadow-sm"
+                className="absolute top-2 left-2 flex gap-3 bg-white dark:bg-[#1E2329]/90 p-1.5 rounded text-gray-500 dark:text-[#848E9C] font-mono text-xs select-none pointer-events-none shadow-sm"
                 style={{ zIndex: 50 }}
             >
                 {tooltipData && (
                     <>
-                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
-                            O: <span className="text-[#EAECEF]">{tooltipData.open.toFixed(2)}</span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-green-600 dark:text-[#0ECB81]" : "text-red-600 dark:text-[#F6465D]"}>
+                            O: <span className="text-gray-900 dark:text-[#EAECEF]">{tooltipData.open.toFixed(2)}</span>
                         </span>
-                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
-                            H: <span className="text-[#EAECEF]">{tooltipData.high.toFixed(2)}</span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-green-600 dark:text-[#0ECB81]" : "text-red-600 dark:text-[#F6465D]"}>
+                            H: <span className="text-gray-900 dark:text-[#EAECEF]">{tooltipData.high.toFixed(2)}</span>
                         </span>
-                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
-                            L: <span className="text-[#EAECEF]">{tooltipData.low.toFixed(2)}</span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-green-600 dark:text-[#0ECB81]" : "text-red-600 dark:text-[#F6465D]"}>
+                            L: <span className="text-gray-900 dark:text-[#EAECEF]">{tooltipData.low.toFixed(2)}</span>
                         </span>
-                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
-                            C: <span className="text-[#EAECEF]">{tooltipData.close.toFixed(2)}</span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-green-600 dark:text-[#0ECB81]" : "text-red-600 dark:text-[#F6465D]"}>
+                            C: <span className="text-gray-900 dark:text-[#EAECEF]">{tooltipData.close.toFixed(2)}</span>
                         </span>
                         {/* Calculate Change % */}
-                        <span className={tooltipData.close >= tooltipData.open ? "text-[#0ECB81]" : "text-[#F6465D]"}>
-                            Change: <span className="text-[#EAECEF]">{((tooltipData.close - tooltipData.open) / tooltipData.open * 100).toFixed(2)}%</span>
+                        <span className={tooltipData.close >= tooltipData.open ? "text-green-600 dark:text-[#0ECB81]" : "text-red-600 dark:text-[#F6465D]"}>
+                            Change: <span className="text-gray-900 dark:text-[#EAECEF]">{((tooltipData.close - tooltipData.open) / tooltipData.open * 100).toFixed(2)}%</span>
                         </span>
                     </>
                 )}
