@@ -519,6 +519,16 @@ async def lifespan(app: FastAPI):
         max_instances=1
     )
 
+    # Betting Signals (1 min)
+    scheduler.add_job(
+        update_betting_signals,
+        IntervalTrigger(minutes=1),
+        id='betting_signals',
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1
+    )
+
     async def services_watchdog():
         try:
             jobs = scheduler.get_jobs()
@@ -557,6 +567,16 @@ async def lifespan(app: FastAPI):
                 )
             if 'broadcast_market_data' not in funcs:
                 scheduler.add_job(broadcast_market_data, IntervalTrigger(seconds=10))
+            
+            if 'betting_signals' not in ids:
+                scheduler.add_job(
+                    update_betting_signals,
+                    IntervalTrigger(minutes=1),
+                    id='betting_signals',
+                    replace_existing=True,
+                    coalesce=True,
+                    max_instances=1
+                )
             log_path = os.path.join(os.getcwd(), "multicoin_bot.log")
             stale = True
             if os.path.exists(log_path):
@@ -1058,68 +1078,48 @@ async def get_fear_and_greed():
         logger.error(f"Failed to fetch Fear & Greed Index: {e}")
         return {"value": "50", "value_classification": "Neutral"}
 
-from deep_translator import GoogleTranslator
+from src.strategies.betting_signal_generator import BettingSignalGenerator
 
-@app.get("/api/v1/market/news")
-async def get_crypto_news():
-    """Fetch Crypto News from CryptoCompare and translate to Chinese"""
+betting_gen = BettingSignalGenerator()
+betting_signals_history = []
+last_betting_update_time = 0
+
+def update_betting_signals():
+    global betting_signals_history, last_betting_update_time
+    
+    # Record update time
+    last_betting_update_time = int(time.time() * 1000)
+    
     try:
-        loop = asyncio.get_running_loop()
-        # Fetch news in English
-        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
-        resp = await loop.run_in_executor(None, lambda: requests.get(url, timeout=10))
+        new_signals = betting_gen.generate_signals()
+        for sig in new_signals:
+            # Check if this exact signal (same timestamp + direction) is already in history
+            exists = False
+            for old_sig in betting_signals_history:
+                if old_sig['symbol'] == sig['symbol'] and \
+                   old_sig['label'] == sig['label'] and \
+                   old_sig['timestamp'] == sig['timestamp'] and \
+                   old_sig['direction'] == sig['direction']:
+                    exists = True
+                    break
+            
+            if not exists:
+                betting_signals_history.insert(0, sig)
         
-        if resp.status_code == 200:
-            data = resp.json()
-            # Type 100 means success in CryptoCompare API
-            if data.get('Type') >= 100: 
-                news_list = data.get('Data', [])
-                
-                # Filter news: Select important categories and exclude low relevance
-                # Categories to prioritize: Market, Trading, Regulation, BTC, ETH, Exchange, Business
-                # Categories to exclude: Sponsored (if any), or specific low value ones
-                
-                important_keywords = ['Market', 'Trading', 'Regulation', 'BTC', 'ETH', 'Exchange', 'Business', 'Finance', 'Technology']
-                
-                filtered_news = []
-                for item in news_list:
-                    cats = item.get('categories', '').split('|')
-                    # Check if any category matches important keywords
-                    if any(keyword.upper() in [c.upper() for c in cats] for keyword in important_keywords):
-                        filtered_news.append(item)
-                
-                # Take top 6 items (since display area is limited)
-                top_news = filtered_news[:6] if filtered_news else news_list[:6]
-                
-                # Translate titles to Chinese
-                translator = GoogleTranslator(source='auto', target='zh-CN')
-                
-                def translate_item(item):
-                    try:
-                        # Translate title
-                        item['title'] = translator.translate(item['title'])
-                        return item
-                    except Exception as e:
-                        logger.warning(f"Translation failed for news item {item.get('id')}: {e}")
-                        return item
-
-                # Run translation in parallel (using ThreadPoolExecutor implicitly via run_in_executor for the whole batch might be tricky, 
-                # but deep_translator makes network calls, so better to run in executor)
-                
-                # We can run translations concurrently
-                async def process_translation(items):
-                    tasks = []
-                    for item in items:
-                        tasks.append(loop.run_in_executor(None, translate_item, item))
-                    return await asyncio.gather(*tasks)
-
-                translated_news = await process_translation(top_news)
-                return translated_news
-
-        return []
+        # Keep list size manageable
+        if len(betting_signals_history) > 50:
+            betting_signals_history = betting_signals_history[:50]
+            
     except Exception as e:
-        logger.error(f"Failed to fetch Crypto News: {e}")
-        return []
+        logger.error(f"Error generating betting signals: {e}")
+
+@app.get("/api/v1/market/betting-signals")
+async def get_betting_signals():
+    """Fetch recent Betting Signals (High Confidence)"""
+    return {
+        "updated_at": last_betting_update_time,
+        "signals": sorted(betting_signals_history, key=lambda x: x['timestamp'], reverse=True)[:20]
+    }
 
 @app.get("/api/v1/ticker", response_model=PriceData)
 async def get_ticker(symbol: str = "BTCUSDT"):

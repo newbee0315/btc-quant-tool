@@ -1,0 +1,38 @@
+{
+    "BTCUSDT": {
+        "10m": {
+            "accuracy": 0.5317,
+            "auc": 0.5545,
+            "hc_accuracy": 0.5321,
+            "signals_count": 577,
+            "model_path": "ensemble_BTCUSDT_10m.joblib",
+            "threshold": 0.65
+        },
+        "30m": {
+            "accuracy": 0.4472,
+            "auc": 0.502,
+            "hc_accuracy": 0.4523,
+            "signals_count": 1351,
+            "model_path": "ensemble_BTCUSDT_30m.joblib",
+            "threshold": 0.65
+        }
+    },
+    "ETHUSDT": {
+        "10m": {
+            "accuracy": 0.523,
+            "auc": 0.5465,
+            "hc_accuracy": 0.5548,
+            "signals_count": 939,
+            "model_path": "ensemble_ETHUSDT_10m.joblib",
+            "threshold": 0.65
+        },
+        "30m": {
+            "accuracy": 0.5147,
+            "auc": 0.5259,
+            "hc_accuracy": 0.5215,
+            "signals_count": 1442,
+            "model_path": "ensemble_ETHUSDT_30m.joblib",
+            "threshold": 0.65
+        }
+    }
+}

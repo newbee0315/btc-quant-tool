@@ -463,7 +463,14 @@ def main():
                 # The user wants "High Frequency" -> usage of funds.
                 # We'll use the allowed_notional directly to maximize utilization up to the limit.
                 planned_notional = allowed_notional
-                amount_coins = planned_notional / opp.get('price', 1.0)
+                
+                # Safety check for price
+                exec_price = float(opp.get('price', 0.0))
+                if exec_price <= 0:
+                    logger.error(f"[{symbol}] Invalid price {exec_price}. Skipping trade.")
+                    continue
+                    
+                amount_coins = planned_notional / exec_price
                 
                 logger.info(f"[{symbol}] Position Sizing: Equity=${total_equity:.2f}, Planned=${planned_notional:.2f} (MaxAllowed), Leverage={final_leverage}x")
                 

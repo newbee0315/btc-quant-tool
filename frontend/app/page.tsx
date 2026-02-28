@@ -6,7 +6,7 @@ import { BacktestPanel } from '@/components/BacktestPanel';
 import { PortfolioPanel } from '@/components/PortfolioPanel';
 import { EquityHistoryChart, EquityHistoryItem } from '@/components/EquityHistoryChart';
 import { PaperTradingPanel, PaperStatus } from '@/components/PaperTradingPanel';
-import { NewsCard } from '@/components/NewsCard';
+import { BettingCard } from '@/components/BettingCard';
 import { MonitoredTickers } from '@/components/MonitoredTickers';
 import { UTCTimestamp } from 'lightweight-charts';
 import { 
@@ -776,9 +776,9 @@ export default function Home() {
                         </div>
                     )}
                     
-                    {/* News Card */}
+                    {/* Betting Signals Card */}
                     <div className="h-[300px]">
-                        <NewsCard />
+                        <BettingCard />
                     </div>
                 </div>
 

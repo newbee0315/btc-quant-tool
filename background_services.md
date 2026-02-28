@@ -8,6 +8,7 @@
 | 任务名称 | 触发时间/频率 | 功能描述 | 对应代码 |
 | :--- | :--- | :--- | :--- |
 | **实盘交易监控日报** | 每30分钟 (xx:00, xx:30) | 向飞书发送账户权益、持仓盈亏、胜率等核心数据统计。 | `send_hourly_monitor_report` |
+| **高置信度信号机器人** | 每 1 分钟 | 扫描 BTC/ETH 10m/30m 周期，结合 ML 模型与严格技术指标生成高胜率信号，并通过飞书发送实时通知。 | `update_betting_signals` |
 | **实时行情广播** | 每 10 秒 | 获取最新 K 线数据，生成 AI 预测信号，并通过 WebSocket 推送给前端页面。 | `broadcast_market_data` |
 | **每日数据更新** | 每天 00:00 AM | 调用 `DailyUpdateManager` (或手动运行 `scripts/daily_update.sh`)，增量更新 14 个核心币种的 1m K线数据。 | `daily_update_task` |
 | **模型定期重训** | 数据更新后自动触发 | 若每日更新中有新数据入库，自动触发 `train_multicoin.py` 进行全量模型重训 (XGBoost)。同时执行策略优化分析。 | `DailyUpdateManager.run` |

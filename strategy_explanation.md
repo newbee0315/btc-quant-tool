@@ -49,7 +49,17 @@
   - `Market_Regime` 匹配
   - `RSI < 80` (Trend) 或 `RSI < 70` (Scalp)
   - `Price > EMA200` (Trend) 或 `Price > EMA50` (Scalp)
+  - **动量确认**: `Price > EMA20` (防止接飞刀) - [NEW]
+  - **反转特例**: 若 `Price` 强势突破 `EMA50` 且 `ML > 0.75`，可忽略 EMA200 限制 (Breakout Reversal)。
   - `OBI > 0.1` (仅 Scalp)
+
+- **SHORT**:
+  - `Ensemble_Prob < Threshold`
+  - `RSI > 20` (Trend) 或 `RSI > 30` (Scalp)
+  - `Price < EMA200` (Trend) 或 `Price < EMA50` (Scalp)
+  - **动量确认**: `Price < EMA20` (防止追空被套) - [NEW]
+  - **反转特例**: 若 `Price` 强势跌破 `EMA50` 且 `ML < 0.25`，可忽略 EMA200 限制 (Breakout Reversal)。
+  - `OBI < -0.1` (仅 Scalp)
 
 ---
 

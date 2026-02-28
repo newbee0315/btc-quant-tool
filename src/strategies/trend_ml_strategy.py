@@ -132,6 +132,9 @@ class TrendMLStrategy(BaseStrategy):
         
         # Calculate EMA 50 (Fast Trend for confirmation)
         df['ema_fast'] = df['close'].ewm(span=50, adjust=False).mean()
+
+        # Calculate EMA 20 (Immediate Trend for momentum)
+        df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
         
         # Calculate RSI
         delta = df['close'].diff()
@@ -292,6 +295,7 @@ class TrendMLStrategy(BaseStrategy):
         ha_open = row['ha_open']
         ema_trend = row['ema_trend']
         ema_fast = row.get('ema_fast', 0)
+        ema_20 = row.get('ema_20', 0)
         rsi = row['rsi']
         atr = row.get('atr', 0)
         adx = row.get('adx', 0)
@@ -384,7 +388,8 @@ class TrendMLStrategy(BaseStrategy):
         # Long Logic
         # Use HA Close for smoother trend check
         # Aggressive: Allow 0.5% buffer below EMA
-        is_uptrend = ha_close > (ema_trend * 0.995) 
+        # Added Safety: Close must be above EMA20 to ensure immediate momentum (Fix for falling knife)
+        is_uptrend = (ha_close > (ema_trend * 0.995)) and (close_price > ema_20)
         is_rsi_safe_long = rsi < 80 # Relaxed from 75
         is_strong_adx = adx > 10 # Relaxed from 15 for more signals
         is_macd_bullish = macd_hist > 0 and macd_hist > prev_macd_hist
@@ -417,14 +422,16 @@ class TrendMLStrategy(BaseStrategy):
             # 4. ML is neutral or bullish (> 0.45)
             # 5. [New] OBI > 0.1 (More bids than asks)
             # 6. [New] Taker Buy Ratio > 1.05 (More buying pressure)
+            # 7. [Fix] Close > EMA20 (Momentum confirmation)
             
-            if is_ha_bullish and rsi < 70 and ha_close > ema_fast and ml_prob > 0.45:
+            if is_ha_bullish and rsi < 70 and ha_close > ema_fast and ml_prob > 0.45 and close_price > ema_20:
                 # Check Flow and Depth
                 if obi > 0.1 and taker_buy_ratio > 1.05:
                     is_scalp_long = True
             
             # Scalp Short
-            if is_ha_bearish and rsi > 30 and ha_close < ema_fast and ml_prob < 0.55:
+            # Added Close < EMA20 check
+            if is_ha_bearish and rsi > 30 and ha_close < ema_fast and ml_prob < 0.55 and close_price < ema_20:
                  if obi < -0.1 and taker_buy_ratio < 0.95:
                      is_scalp_short = True
                 
@@ -474,18 +481,32 @@ class TrendMLStrategy(BaseStrategy):
                 reason.append(f"ML10m({ml_prob_10m:.2f})确认")
         
         # CZSC Reversal Logic (Bypass EMA Trend)
-        elif self.enable_czsc and is_chan_confirmed_long and is_volume_support and is_ha_bullish and is_rsi_safe_long:
+        # Also allow purely technical reversals if ML is strong
+        is_tech_reversal_long = False
+        if (close_price > ema_20) and (close_price > ema_fast) and (macd_hist > 0) and (rsi < 70) and is_strong_adx:
+             # Price broke above Fast EMA (50) and Short EMA (20) with Momentum
+             is_tech_reversal_long = True
+
+        if (self.enable_czsc and is_chan_confirmed_long and is_volume_support and is_ha_bullish and is_rsi_safe_long) or (is_tech_reversal_long and is_ml_bullish):
             # Parameter Tuning: Stricter ML confirmation for reversals (was 0.65)
-            if ml_prob > 0.70: 
+            # If purely technical reversal, require higher ML confidence
+            threshold = 0.70 if not is_tech_reversal_long else 0.75
+            
+            if ml_prob > threshold: 
                 signal = 1
-                reason.append(f"缠论底背驰/分型反转")
+                if is_tech_reversal_long:
+                    reason.append(f"趋势反转(Price>EMA50)")
+                else:
+                    reason.append(f"缠论底背驰/分型反转")
+                
                 reason.append(f"放量确认")
                 reason.append(f"HA阳线")
-                reason.append(f"ML确认({ml_prob:.2f})>0.7")
+                reason.append(f"ML确认({ml_prob:.2f})>{threshold}")
         
         # Short Logic
         # Aggressive: Allow 0.5% buffer above EMA
-        is_downtrend = ha_close < (ema_trend * 1.005)
+        # Added Safety: Close must be below EMA20 to ensure immediate momentum
+        is_downtrend = (ha_close < (ema_trend * 1.005)) and (close_price < ema_20)
         is_rsi_safe_short = rsi > 20 # Relaxed from 25
         is_macd_bearish = macd_hist < 0 and macd_hist < prev_macd_hist
         
@@ -525,14 +546,27 @@ class TrendMLStrategy(BaseStrategy):
                 reason.append(f"ML10m({ml_prob_10m:.2f})确认")
         
         # CZSC Reversal Logic (Bypass EMA Trend)
-        elif self.enable_czsc and is_chan_confirmed_short and is_volume_support and is_ha_bearish and is_rsi_safe_short:
+        # Also allow purely technical reversals if ML is strong
+        is_tech_reversal_short = False
+        if (close_price < ema_20) and (close_price < ema_fast) and (macd_hist < 0) and (rsi > 30) and is_strong_adx:
+             # Price broke below Fast EMA (50) and Short EMA (20) with Momentum
+             is_tech_reversal_short = True
+
+        if (self.enable_czsc and is_chan_confirmed_short and is_volume_support and is_ha_bearish and is_rsi_safe_short) or (is_tech_reversal_short and is_ml_bearish):
             # Parameter Tuning: Stricter ML confirmation for reversals (was 0.35)
-            if ml_prob < 0.30: 
+            # If purely technical reversal, require higher ML confidence (bearish means prob < threshold)
+            threshold = 0.30 if not is_tech_reversal_short else 0.25
+            
+            if ml_prob < threshold: 
                 signal = -1
-                reason.append(f"缠论顶背驰/分型反转")
+                if is_tech_reversal_short:
+                     reason.append(f"趋势反转(Price<EMA50)")
+                else:
+                     reason.append(f"缠论顶背驰/分型反转")
+                
                 reason.append(f"放量确认")
                 reason.append(f"HA阴线")
-                reason.append(f"ML确认({ml_prob:.2f})<0.3")
+                reason.append(f"ML确认({ml_prob:.2f})<{threshold}")
 
 
         # -----------------------------------------------------------

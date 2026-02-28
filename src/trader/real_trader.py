@@ -302,20 +302,34 @@ class RealTrader:
                 if self.cached_open_orders and (now - self.last_open_orders_fetch < self.open_orders_cache_ttl):
                     open_orders = self.cached_open_orders
                 else:
-                    # Try global fetch first
-                    try:
-                        open_orders = self._safe_exchange_call('fetch_open_orders')
-                        self.cached_open_orders = open_orders
-                        self.last_open_orders_fetch = now
-                    except Exception as e:
-                        # Fallback to monitored symbols
+                    # Optimization: For Binance Futures, global fetch_open_orders is Weight 40.
+                    # Per-symbol fetch is Weight 1.
+                    # If we have < 40 monitored symbols, it's cheaper to loop.
+                    use_global_fetch = True
+                    if self.monitored_symbols and len(self.monitored_symbols) < 30:
+                        use_global_fetch = False
+                    
+                    if use_global_fetch:
+                        # Try global fetch first
+                        try:
+                            open_orders = self._safe_exchange_call('fetch_open_orders')
+                            self.cached_open_orders = open_orders
+                            self.last_open_orders_fetch = now
+                        except Exception as e:
+                            # Fallback to monitored symbols
+                            use_global_fetch = False
+                    
+                    if not use_global_fetch:
+                        # Fetch per symbol
                         unique_symbols = list(set(self.monitored_symbols))
+                        temp_orders = []
                         for sym in unique_symbols:
                             try:
                                 orders = self._safe_exchange_call('fetch_open_orders', sym)
-                                open_orders.extend(orders)
+                                temp_orders.extend(orders)
                             except Exception:
                                 pass
+                        open_orders = temp_orders
                         self.cached_open_orders = open_orders
                         self.last_open_orders_fetch = now
 
