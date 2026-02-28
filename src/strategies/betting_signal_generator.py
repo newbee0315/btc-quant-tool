@@ -120,22 +120,31 @@ class BettingSignalGenerator:
             # Filter columns that are not in exclude list
             feature_cols = [c for c in df.columns if c not in exclude_cols]
             
-            # Check if model has feature_names_in_ (sklearn specific)
+            # Check if model has feature_names_in_ (sklearn/xgboost specific)
             if hasattr(model, 'feature_names_in_'):
                 # Ensure we strictly use the features the model was trained on
-                # Fill missing with 0, drop extras
                 X_input = pd.DataFrame([curr])
-                # This ensures column order and existence
-                try:
-                    X_input = X_input[model.feature_names_in_]
-                except KeyError:
-                    # Missing columns
-                    missing = set(model.feature_names_in_) - set(X_input.columns)
+                
+                # Check for missing columns
+                missing = set(model.feature_names_in_) - set(X_input.columns)
+                if missing:
                     logger.warning(f"Missing features for model: {missing}")
+                    # Option: Return None to be safe, or fill with 0? 
+                    # Given this is a betting signal, we should be strict.
                     return None
+                
+                # Reorder and filter columns to match training data exactly
+                X_input = X_input[model.feature_names_in_]
+                
             else:
-                # Fallback
+                # Fallback: Model doesn't store feature names (e.g. older sklearn or custom wrapper)
+                # We must rely on FeatureEngineer consistency, but we can check counts.
                 X_input = pd.DataFrame([curr[feature_cols]])
+                
+                if hasattr(model, 'n_features_in_'):
+                    if X_input.shape[1] != model.n_features_in_:
+                        logger.error(f"Feature count mismatch! Model expects {model.n_features_in_}, got {X_input.shape[1]}")
+                        return None
             
             try:
                 ml_prob = model.predict_proba(X_input)[0][1] # Prob of UP
@@ -150,6 +159,7 @@ class BettingSignalGenerator:
         strength = 0
         direction = None
         signal_type = None
+        label = f"{horizon}m"
         
         if ml_prob > 0.5:
             direction = "CALL" # 看涨
@@ -254,7 +264,6 @@ class BettingSignalGenerator:
             return None
             
         # Construct Output
-        label = f"{horizon}m"
         reason_str = ", ".join(reasons)
         
         # --- Alert Deduplication ---
