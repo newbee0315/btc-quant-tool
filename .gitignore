@@ -68,3 +68,9 @@ optimization_report.md
 .trae/
 reports/
 cli_*
+
+# Models (Large files)
+*.joblib
+*.pth
+*.keras
+*.h5
