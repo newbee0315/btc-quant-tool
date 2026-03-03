@@ -1,256 +1,289 @@
 {
     "XRPUSDT": {
         "10m": {
-            "accuracy": 0.5961,
-            "precision": 0.3774,
-            "recall": 0.44,
-            "f1": 0.4063,
-            "auc": 0.5865,
-            "model_path": "xgb_XRPUSDT_10m.joblib"
+            "accuracy": 0.6819,
+            "precision": 0.6667,
+            "recall": 0.002,
+            "f1": 0.0039,
+            "auc": 0.5895,
+            "model_path": "xgb_XRPUSDT_10m.joblib",
+            "status": "success"
         },
         "30m": {
-            "accuracy": 0.4352,
-            "precision": 0.3921,
-            "recall": 0.8936,
-            "f1": 0.5451,
-            "auc": 0.5544,
-            "model_path": "xgb_XRPUSDT_30m.joblib"
+            "accuracy": 0.6196,
+            "precision": 0.6866,
+            "recall": 0.0042,
+            "f1": 0.0083,
+            "auc": 0.5695,
+            "model_path": "xgb_XRPUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "OPUSDT": {
         "10m": {
-            "accuracy": 0.5008,
-            "precision": 0.3698,
-            "recall": 0.545,
-            "f1": 0.4407,
-            "auc": 0.5186,
-            "model_path": "xgb_OPUSDT_10m.joblib"
+            "accuracy": 0.6318,
+            "precision": 0.7778,
+            "recall": 0.0005,
+            "f1": 0.001,
+            "auc": 0.5357,
+            "timestamp": 1772543190.3705971,
+            "model_path": "xgb_OPUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:06:30"
         },
         "30m": {
-            "accuracy": 0.4366,
-            "precision": 0.4107,
-            "recall": 0.9013,
-            "f1": 0.5643,
-            "auc": 0.5247,
-            "model_path": "xgb_OPUSDT_30m.joblib"
+            "accuracy": 0.5611,
+            "precision": 0.4231,
+            "recall": 0.2028,
+            "f1": 0.2741,
+            "auc": 0.5242,
+            "status": "failed"
         }
     },
     "BNBUSDT": {
         "10m": {
-            "accuracy": 0.6551,
-            "precision": 0.3564,
-            "recall": 0.352,
-            "f1": 0.3542,
-            "auc": 0.6059,
-            "model_path": "xgb_BNBUSDT_10m.joblib"
+            "accuracy": 0.7007,
+            "precision": 0.6187,
+            "recall": 0.0066,
+            "f1": 0.0131,
+            "auc": 0.5669,
+            "timestamp": 1772543772.063732,
+            "model_path": "xgb_BNBUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:16:12"
         },
         "30m": {
-            "accuracy": 0.4996,
-            "precision": 0.3861,
-            "recall": 0.6705,
-            "f1": 0.4901,
-            "auc": 0.5578,
-            "model_path": "xgb_BNBUSDT_30m.joblib"
+            "accuracy": 0.6188,
+            "precision": 0.4342,
+            "recall": 0.1344,
+            "f1": 0.2053,
+            "auc": 0.5724,
+            "status": "failed"
         }
     },
     "ADAUSDT": {
         "10m": {
-            "accuracy": 0.5849,
-            "precision": 0.3882,
-            "recall": 0.334,
-            "f1": 0.3591,
-            "auc": 0.5366,
+            "accuracy": 0.646,
+            "precision": 1.0,
+            "recall": 0.0001,
+            "f1": 0.0003,
+            "auc": 0.557,
+            "timestamp": 1772543010.8267589,
             "model_path": "xgb_ADAUSDT_10m.joblib",
-            "updated_at": "2026-02-28 10:22:44"
+            "updated_at": "2026-03-03 21:03:30"
         },
         "30m": {
-            "accuracy": 0.49,
-            "precision": 0.4163,
-            "recall": 0.7091,
-            "f1": 0.5246,
-            "auc": 0.5466,
-            "model_path": "xgb_ADAUSDT_30m.joblib"
+            "accuracy": 0.6035,
+            "precision": 0.5211,
+            "recall": 0.0016,
+            "f1": 0.0032,
+            "auc": 0.5456,
+            "model_path": "xgb_ADAUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "TRXUSDT": {
         "10m": {
-            "accuracy": 0.8909,
-            "precision": 0.2802,
-            "recall": 0.0112,
-            "f1": 0.0215,
-            "auc": 0.5562,
+            "accuracy": 0.899,
+            "precision": 0.7188,
+            "recall": 0.0052,
+            "f1": 0.0104,
+            "auc": 0.6264,
+            "timestamp": 1772541527.508034,
             "model_path": "xgb_TRXUSDT_10m.joblib",
-            "updated_at": "2026-02-28 03:50:30"
+            "updated_at": "2026-03-03 20:38:47"
         },
         "30m": {
-            "accuracy": 0.7624,
-            "precision": 0.3908,
-            "recall": 0.0166,
-            "f1": 0.0319,
-            "auc": 0.5881,
-            "model_path": "xgb_TRXUSDT_30m.joblib"
+            "accuracy": 0.7778,
+            "precision": 0.5714,
+            "recall": 0.0031,
+            "f1": 0.0062,
+            "auc": 0.5973,
+            "model_path": "xgb_TRXUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "ETHUSDT": {
         "10m": {
-            "accuracy": 0.5991,
-            "precision": 0.3852,
-            "recall": 0.5276,
-            "f1": 0.4453,
-            "auc": 0.614,
-            "model_path": "xgb_ETHUSDT_10m.joblib"
+            "accuracy": 0.6878,
+            "precision": 0.8214,
+            "recall": 0.0013,
+            "f1": 0.0026,
+            "auc": 0.6179,
+            "model_path": "xgb_ETHUSDT_10m.joblib",
+            "status": "success"
         },
         "30m": {
-            "accuracy": 0.5065,
-            "precision": 0.4137,
-            "recall": 0.7197,
-            "f1": 0.5254,
-            "auc": 0.5709,
-            "model_path": "xgb_ETHUSDT_30m.joblib"
+            "accuracy": 0.6147,
+            "precision": 0.5367,
+            "recall": 0.0043,
+            "f1": 0.0085,
+            "auc": 0.5659,
+            "model_path": "xgb_ETHUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "PEPEUSDT": {
         "10m": {
-            "accuracy": 0.5954,
-            "precision": 0.4045,
-            "recall": 0.2845,
-            "f1": 0.3341,
-            "auc": 0.5438,
-            "model_path": "xgb_PEPEUSDT_10m.joblib"
+            "accuracy": 0.6402,
+            "precision": 1.0,
+            "recall": 0.0001,
+            "f1": 0.0001,
+            "auc": 0.5515,
+            "timestamp": 1772544542.812874,
+            "model_path": "xgb_PEPEUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:29:02"
         },
         "30m": {
-            "accuracy": 0.5601,
-            "precision": 0.4374,
-            "recall": 0.2828,
-            "f1": 0.3435,
-            "auc": 0.5408,
-            "model_path": "xgb_PEPEUSDT_30m.joblib"
+            "accuracy": 0.5972,
+            "precision": 0.9,
+            "recall": 0.0004,
+            "f1": 0.0008,
+            "auc": 0.5294,
+            "model_path": "xgb_PEPEUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "BTCUSDT": {
         "10m": {
-            "accuracy": 0.6232,
-            "precision": 0.3477,
-            "recall": 0.507,
-            "f1": 0.4125,
-            "auc": 0.6195,
-            "model_path": "xgb_BTCUSDT_10m.joblib"
+            "accuracy": 0.7043,
+            "precision": 0.5641,
+            "recall": 0.0034,
+            "f1": 0.0068,
+            "auc": 0.6095,
+            "timestamp": 1772543266.709535,
+            "model_path": "xgb_BTCUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:07:46"
         },
         "30m": {
-            "accuracy": 0.5167,
-            "precision": 0.392,
-            "recall": 0.7336,
-            "f1": 0.511,
-            "auc": 0.5984,
-            "model_path": "xgb_BTCUSDT_30m.joblib"
+            "accuracy": 0.6467,
+            "precision": 0.5237,
+            "recall": 0.0146,
+            "f1": 0.0285,
+            "auc": 0.5975,
+            "model_path": "xgb_BTCUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "DOGEUSDT": {
         "10m": {
-            "accuracy": 0.6515,
-            "precision": 0.4147,
-            "recall": 0.2636,
-            "f1": 0.3223,
-            "auc": 0.6022,
-            "model_path": "xgb_DOGEUSDT_10m.joblib"
+            "accuracy": 0.6633,
+            "precision": 0.7105,
+            "recall": 0.0019,
+            "f1": 0.0037,
+            "auc": 0.5796,
+            "timestamp": 1772543958.159007,
+            "model_path": "xgb_DOGEUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:19:18"
         },
         "30m": {
-            "accuracy": 0.591,
-            "precision": 0.4469,
-            "recall": 0.3151,
-            "f1": 0.3696,
-            "auc": 0.5733,
-            "model_path": "xgb_DOGEUSDT_30m.joblib"
+            "accuracy": 0.6188,
+            "precision": 0.5439,
+            "recall": 0.0014,
+            "f1": 0.0028,
+            "auc": 0.5543,
+            "model_path": "xgb_DOGEUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "AVAXUSDT": {
         "10m": {
-            "accuracy": 0.6612,
-            "precision": 0.3548,
-            "recall": 0.0975,
-            "f1": 0.153,
-            "auc": 0.559,
-            "model_path": "xgb_AVAXUSDT_10m.joblib"
+            "accuracy": 0.6619,
+            "precision": 0.6154,
+            "recall": 0.0044,
+            "f1": 0.0087,
+            "auc": 0.578,
+            "timestamp": 1772543579.3756852,
+            "model_path": "xgb_AVAXUSDT_10m.joblib",
+            "updated_at": "2026-03-03 21:12:59"
         },
         "30m": {
-            "accuracy": 0.5376,
-            "precision": 0.4199,
-            "recall": 0.506,
-            "f1": 0.4589,
-            "auc": 0.5394,
-            "model_path": "xgb_AVAXUSDT_30m.joblib"
+            "accuracy": 0.6091,
+            "precision": 0.5204,
+            "recall": 0.0391,
+            "f1": 0.0727,
+            "auc": 0.5759,
+            "model_path": "xgb_AVAXUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "SOLUSDT": {
         "10m": {
-            "accuracy": 0.6766,
-            "precision": 0.5449,
-            "recall": 0.0053,
-            "f1": 0.0105,
-            "auc": 0.599,
-            "model_path": "xgb_SOLUSDT_10m.joblib"
+            "accuracy": 0.6455,
+            "precision": 0.6667,
+            "recall": 0.0016,
+            "f1": 0.0031,
+            "auc": 0.5695,
+            "timestamp": 1772542134.3351839,
+            "model_path": "xgb_SOLUSDT_10m.joblib",
+            "updated_at": "2026-03-03 20:48:54"
         },
         "30m": {
-            "accuracy": 0.5335,
-            "precision": 0.4393,
-            "recall": 0.6583,
-            "f1": 0.527,
-            "auc": 0.569,
-            "model_path": "xgb_SOLUSDT_30m.joblib"
+            "accuracy": 0.6,
+            "precision": 0.5625,
+            "recall": 0.0004,
+            "f1": 0.0008,
+            "auc": 0.5544,
+            "model_path": "xgb_SOLUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "BCHUSDT": {
         "10m": {
-            "accuracy": 0.6935,
-            "precision": 0.4113,
-            "recall": 0.0625,
-            "f1": 0.1085,
-            "auc": 0.5747,
-            "model_path": "xgb_BCHUSDT_10m.joblib"
+            "accuracy": 0.6939,
+            "precision": 0.619,
+            "recall": 0.0015,
+            "f1": 0.0029,
+            "auc": 0.5903,
+            "model_path": "xgb_BCHUSDT_10m.joblib",
+            "status": "success"
         },
         "30m": {
-            "accuracy": 0.6293,
-            "precision": 0.4775,
-            "recall": 0.0132,
-            "f1": 0.0257,
-            "auc": 0.5689,
-            "model_path": "xgb_BCHUSDT_30m.joblib"
+            "accuracy": 0.6255,
+            "precision": 0.557,
+            "recall": 0.0061,
+            "f1": 0.0121,
+            "auc": 0.5637,
+            "model_path": "xgb_BCHUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "LINKUSDT": {
         "10m": {
-            "accuracy": 0.5986,
-            "precision": 0.3805,
-            "recall": 0.3805,
-            "f1": 0.3805,
-            "auc": 0.5697,
-            "model_path": "xgb_LINKUSDT_10m.joblib"
+            "accuracy": 0.6627,
+            "precision": 1.0,
+            "recall": 0.0001,
+            "f1": 0.0002,
+            "auc": 0.5646,
+            "model_path": "xgb_LINKUSDT_10m.joblib",
+            "status": "success"
         },
         "30m": {
-            "accuracy": 0.4549,
-            "precision": 0.4021,
-            "recall": 0.8193,
-            "f1": 0.5394,
-            "auc": 0.5593,
-            "model_path": "xgb_LINKUSDT_30m.joblib"
+            "accuracy": 0.6043,
+            "precision": 0.5991,
+            "recall": 0.0057,
+            "f1": 0.0112,
+            "auc": 0.5564,
+            "model_path": "xgb_LINKUSDT_30m.joblib",
+            "status": "success"
         }
     },
     "LDOUSDT": {
         "10m": {
-            "accuracy": 0.6671,
-            "precision": 0.434,
-            "recall": 0.0312,
-            "f1": 0.0582,
-            "auc": 0.5577,
-            "model_path": "xgb_LDOUSDT_10m.joblib"
+            "accuracy": 0.6622,
+            "precision": 0.8235,
+            "recall": 0.0021,
+            "f1": 0.0041,
+            "auc": 0.5659,
+            "timestamp": 1772542607.025908,
+            "model_path": "xgb_LDOUSDT_10m.joblib",
+            "updated_at": "2026-03-03 20:56:47"
         },
         "30m": {
-            "accuracy": 0.5783,
-            "precision": 0.4319,
-            "recall": 0.2665,
-            "f1": 0.3296,
-            "auc": 0.5414,
-            "model_path": "xgb_LDOUSDT_30m.joblib"
+            "accuracy": 0.6079,
+            "precision": 0.4794,
+            "recall": 0.0307,
+            "f1": 0.0577,
+            "auc": 0.5563,
+            "status": "failed"
         }
     }
 }

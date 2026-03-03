@@ -1031,7 +1031,7 @@ export default function Home() {
                             <div className="p-4 border-b border-gray-200 dark:border-[#2B3139] flex items-center justify-between bg-white dark:bg-[#1E2329]">
                                 <h2 className="font-semibold text-sm flex items-center gap-2 text-gray-900 dark:text-[#EAECEF]">
                                     <History className="w-4 h-4 text-yellow-600 dark:text-[#F0B90B]" />
-                                    Recent Trades (Closed)
+                                    Recent Trades (Closed: {trader?.trade_history?.length || 0})
                                 </h2>
                             </div>
                             <div className="overflow-y-auto flex-1">
@@ -1052,10 +1052,6 @@ export default function Home() {
                                     <tbody className="divide-y divide-gray-200 dark:divide-[#2B3139]">
                                         {trader?.trade_history && trader.trade_history.length > 0 ? (
                                             trader.trade_history.map((trade) => {
-                                                // Only show closed trades (those with PnL and Entry/Exit info)
-                                                const feeCost = typeof (trade as any).fee === 'number' ? (trade as any).fee : ((trade as any).fee?.cost ?? 0);
-                                                if ((!trade.realized_pnl || trade.realized_pnl === 0) && !feeCost) return null;
-                                                
                                                 const isWin = (trade.realized_pnl || 0) > 0;
                                                 const pnlColor = isWin ? 'text-green-600 dark:text-[#0ECB81]' : 'text-red-600 dark:text-[#F6465D]';
                                                 // Use calculated position side if available, otherwise infer from exit side

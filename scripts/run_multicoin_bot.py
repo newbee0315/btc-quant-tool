@@ -60,7 +60,7 @@ def main():
     # To disable proxy (e.g. on cloud), set PROXY_URL="" in .env
     proxy_url = os.getenv("PROXY_URL")
     if proxy_url is None:
-        proxy_url = "http://127.0.0.1:33210" # Default for local dev
+        proxy_url = "http://127.0.0.1:7892" # Default for local dev
     elif proxy_url == "":
         proxy_url = None # Explicitly disabled via empty string
     

@@ -102,13 +102,21 @@ def scan_market():
             
             ml_prob = indicators.get('ml_prob', 0.5)
             close_price = last_row['close']
+            adx = last_row.get('adx', 0)
+            rsi = last_row.get('rsi', 0)
+            ema_20 = last_row.get('ema_20', 0)
+            ema_50 = last_row.get('ema_50', 0)
+            
+            trend = "FLAT"
+            if close_price > ema_20 and ema_20 > ema_50: trend = "UP"
+            elif close_price < ema_20 and ema_20 < ema_50: trend = "DOWN"
             
             # Print status for every coin
             status = "NEUTRAL"
             if signal == 1: status = "LONG"
             elif signal == -1: status = "SHORT"
             
-            logger.info(f"{symbol:<10} | {status:<7} | Price: {close_price:<10.4f} | ML(30m): {ml_prob:.2f} | Reason: {reason}")
+            logger.info(f"{symbol:<10} | {status:<7} | Price: {close_price:<10.4f} | ML: {ml_prob:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f} | Trend: {trend} | Reason: {reason}")
             
             if signal != 0:
                 opportunities.append({

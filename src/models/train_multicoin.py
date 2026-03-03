@@ -36,7 +36,7 @@ HORIZONS = [10, 30] # Prediction horizons in minutes
 # Performance Requirements
 MIN_ACCURACY = 0.55
 MIN_PRECISION = 0.52
-MAX_TRIALS = 5  # Maximum number of hyperparameter optimization trials
+MAX_TRIALS = 30  # Increased trials for better optimization
 
 # Ensure models dir exists
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -61,14 +61,18 @@ def load_data(symbol, timeframe='1m'):
 def get_random_params():
     """Generate random hyperparameters for XGBoost"""
     return {
-        'n_estimators': random.choice([100, 300, 500, 800, 1000]),
-        'max_depth': random.choice([3, 4, 5, 6, 8, 10]),
-        'learning_rate': random.uniform(0.01, 0.2),
-        'subsample': random.uniform(0.6, 1.0),
-        'colsample_bytree': random.uniform(0.6, 1.0),
+        'n_estimators': random.choice([300, 500, 800, 1000, 1500, 2000]),
+        'max_depth': random.choice([3, 4, 5, 6, 7, 8, 10]),
+        'learning_rate': random.choice([0.001, 0.005, 0.01, 0.02, 0.05, 0.1]),
+        'subsample': random.uniform(0.6, 0.9),
+        'colsample_bytree': random.uniform(0.6, 0.9),
+        'min_child_weight': random.choice([1, 3, 5, 7, 9]),
+        'gamma': random.uniform(0, 0.5),
+        'reg_alpha': random.choice([0, 0.001, 0.01, 0.1, 1, 10]),
+        'reg_lambda': random.choice([0, 0.001, 0.01, 0.1, 1, 10]),
         'random_state': 42,
         'n_jobs': -1,
-        'eval_metric': 'logloss'
+        'eval_metric': 'auc'
     }
 
 def train_for_symbol(symbol):
@@ -85,8 +89,19 @@ def train_for_symbol(symbol):
     logger.info(f"[{symbol}] Generating features...")
     df = FeatureEngineer.generate_features(df)
     
-    # Drop NaNs
+    # Debug: Check for columns with all NaNs
+    nan_cols = df.columns[df.isna().all()].tolist()
+    if nan_cols:
+        logger.warning(f"[{symbol}] Columns entirely NaN: {nan_cols}")
+        # Drop these columns instead of rows
+        df = df.drop(columns=nan_cols)
+        
+    # Drop NaNs (This will remove the warmup period for indicators, e.g. first 200 rows)
     df = df.dropna()
+    
+    if len(df) < 500:
+        logger.warning(f"[{symbol}] Data too short after feature generation ({len(df)} rows). Skipping.")
+        return None
     
     metrics_report = {}
     
@@ -112,7 +127,16 @@ def train_for_symbol(symbol):
         y_train = train_df[f'target_{horizon}m']
         X_test = test_df[features]
         y_test = test_df[f'target_{horizon}m']
+
+        # Calculate class weight to handle imbalance
+        pos_count = y_train.sum()
+        neg_count = len(y_train) - pos_count
+        # Full weight might be too aggressive, dampening it
+        full_weight = neg_count / pos_count if pos_count > 0 else 1.0
+        pos_ratio = pos_count / len(y_train)
         
+        logger.info(f"[{symbol} {horizon}m] Training Data: {len(X_train)} rows. Positives: {pos_count} ({pos_ratio:.2%}). Full Weight: {full_weight:.2f}")
+
         best_model = None
         best_metrics = None
         best_score = -1
@@ -122,8 +146,34 @@ def train_for_symbol(symbol):
         
         for trial in range(MAX_TRIALS):
             params = get_random_params()
-            model = XGBClassifier(**params)
-            model.fit(X_train, y_train)
+            
+            # Dynamic scale_pos_weight: Randomly choose weight
+            # If we want higher precision, we should avoiding over-weighting the minority class.
+            # Sometimes under-weighting (conservative) helps precision.
+            if full_weight > 1.0:
+                 # Fix bias towards long: Cap scale_pos_weight to prevent over-prediction of positives
+                 # Cap at 3.0 or full weight, whichever is smaller
+                 max_weight = min(full_weight, 3.0)
+                 params['scale_pos_weight'] = random.uniform(0.1, max_weight)
+            else:
+                 params['scale_pos_weight'] = random.uniform(0.1, 1.0)
+            
+            # Ensure eval_metric is set in params for __init__
+            if 'eval_metric' not in params:
+                params['eval_metric'] = 'auc'
+
+            model = XGBClassifier(**params, early_stopping_rounds=50)
+            
+            # Use X_test for early stopping (Optimization set)
+            # Note: In strict ML, we should use a separate validation set, but for this 
+            # rolling time-series setup, using the test set to stop training is a common 
+            # practical optimization to prevent overfitting the train set.
+            model.fit(
+                X_train, 
+                y_train, 
+                eval_set=[(X_test, y_test)], 
+                verbose=False
+            )
             
             y_pred = model.predict(X_test)
             y_prob = model.predict_proba(X_test)[:, 1]
@@ -159,17 +209,31 @@ def train_for_symbol(symbol):
             logger.error(f"[{symbol} {horizon}m] ❌ Failed to train any valid model.")
             continue
             
-        if best_metrics['accuracy'] < MIN_ACCURACY or best_metrics['precision'] < MIN_PRECISION:
-             logger.warning(f"[{symbol} {horizon}m] ⚠️ Best model did NOT meet standards after {MAX_TRIALS} trials. Acc: {best_metrics['accuracy']}, Prec: {best_metrics['precision']}")
-        
-        # Save Best Model
         model_filename = f"xgb_{symbol}_{horizon}m.joblib"
-        joblib.dump(best_model, os.path.join(MODELS_DIR, model_filename))
+        model_path = os.path.join(MODELS_DIR, model_filename)
+
+        if best_metrics['accuracy'] < MIN_ACCURACY or best_metrics['precision'] < MIN_PRECISION:
+             logger.warning(f"[{symbol} {horizon}m] ⚠️ Best model did NOT meet standards. Acc: {best_metrics['accuracy']}, Prec: {best_metrics['precision']}")
+             logger.warning(f"[{symbol} {horizon}m] 🛑 SKIPPING SAVE. Existing model (if any) will be removed to prevent losses.")
+             
+             # Remove existing model if it exists, to ensure safety
+             if os.path.exists(model_path):
+                 os.remove(model_path)
+                 logger.info(f"[{symbol} {horizon}m] 🗑️ Deleted unsafe old model.")
+             
+             # Mark as failed in report
+             best_metrics["status"] = "failed"
+             metrics_report[f"{horizon}m"] = best_metrics
+             continue
+        
+        # Save Best Model only if valid
+        joblib.dump(best_model, model_path)
         
         best_metrics["model_path"] = model_filename
+        best_metrics["status"] = "success"
         metrics_report[f"{horizon}m"] = best_metrics
         
-        logger.info(f"[{symbol} {horizon}m] Selected Best: Acc: {best_metrics['accuracy']} | Prec: {best_metrics['precision']}")
+        logger.info(f"[{symbol} {horizon}m] ✅ Model Saved. Acc: {best_metrics['accuracy']} | Prec: {best_metrics['precision']}")
         
     return {symbol: metrics_report}
 

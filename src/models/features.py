@@ -266,6 +266,7 @@ class FeatureEngineer:
         
         # Cleanup
         df = df.replace([np.inf, -np.inf], np.nan)
-        df = df.fillna(0)
+        # Do NOT fillna(0) here. Let the caller handle NaNs (e.g. dropna) to avoid learning from 0s.
+        # df = df.fillna(0)
         
         return df

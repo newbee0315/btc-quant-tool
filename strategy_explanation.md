@@ -50,6 +50,7 @@
   - `RSI < 80` (Trend) 或 `RSI < 70` (Scalp)
   - `Price > EMA200` (Trend) 或 `Price > EMA50` (Scalp)
   - **动量确认**: `Price > EMA20` (防止接飞刀) - [NEW]
+  - **趋势增强 (Trend Booster)**: 若 `ADX > 30` (强趋势)，ML 阈值要求自动降低 0.05，以捕捉顺势机会。
   - **反转特例**: 若 `Price` 强势突破 `EMA50` 且 `ML > 0.75`，可忽略 EMA200 限制 (Breakout Reversal)。
   - `OBI > 0.1` (仅 Scalp)
 
@@ -58,7 +59,9 @@
   - `RSI > 20` (Trend) 或 `RSI > 30` (Scalp)
   - `Price < EMA200` (Trend) 或 `Price < EMA50` (Scalp)
   - **动量确认**: `Price < EMA20` (防止追空被套) - [NEW]
+  - **趋势增强 (Trend Booster)**: 若 `ADX > 30` (强趋势)，ML 阈值要求自动降低 0.05，以捕捉顺势机会。
   - **反转特例**: 若 `Price` 强势跌破 `EMA50` 且 `ML < 0.25`，可忽略 EMA200 限制 (Breakout Reversal)。
+  - **恐慌做空 (Panic Short)**: 若趋势极弱 (`Price < EMA20` & `EMA50`, `ADX > 25`)，即使 ML 偏多 (`< 0.70`) 也强制看空。此时 RSI 限制放宽至 `> 20`。
   - `OBI < -0.1` (仅 Scalp)
 
 ---

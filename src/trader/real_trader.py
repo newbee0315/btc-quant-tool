@@ -8,6 +8,7 @@ from typing import Dict, Optional
 
 from src.notification.feishu import FeishuBot
 from src.utils.history_recorder import EquityRecorder
+from src.utils.trade_persistence import TradePersistence
 from src.utils.config_manager import config_manager
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class RealTrader:
         self.notifier = notifier
         self.proxy_url = proxy_url
         self.equity_recorder = EquityRecorder()
+        self.trade_persistence = TradePersistence()
         self.config_manager = config_manager
         
         # Load leverage from config if available to override default
@@ -637,9 +639,40 @@ class RealTrader:
                 return False
             
             # 1. Check Daily Loss
-            stats = self.get_stats()
-            daily_pnl = stats.get('total_pnl', 0.0)
-            
+            # Calculate Daily PnL from trades (reset at UTC 00:00)
+            daily_pnl = 0.0
+            try:
+                trades = self.trade_persistence.get_all_trades()
+                # Get start of day timestamp (UTC 00:00)
+                current_ts = time.time()
+                days_since_epoch = int(current_ts / 86400)
+                start_of_day_ts = days_since_epoch * 86400 * 1000
+                
+                for t in trades:
+                    if t.get('timestamp', 0) >= start_of_day_ts:
+                         # Calculate Net PnL (Realized PnL - Commission)
+                         pnl = 0.0
+                         fee = 0.0
+                         
+                         if 'info' in t and isinstance(t['info'], dict):
+                             # Binance Futures realizedPnl usually excludes commission
+                             pnl = float(t['info'].get('realizedPnl', 0))
+                             if 'commission' in t['info']:
+                                 fee = float(t['info'].get('commission', 0))
+                         elif 'realized_pnl' in t:
+                             pnl = float(t['realized_pnl'])
+                             
+                         if fee == 0 and 'fee' in t:
+                             if isinstance(t['fee'], dict):
+                                 fee = float(t['fee'].get('cost', 0))
+                             elif isinstance(t['fee'], (int, float)):
+                                 fee = float(t['fee'])
+                                 
+                         daily_pnl += (pnl - fee)
+            except Exception as e:
+                logger.error(f"Error calculating daily PnL: {e}")
+                daily_pnl = 0.0
+
             # Max Daily Loss Limit (from config)
             config = self.config_manager.get_config()
             max_dd_limit = config.get('max_drawdown_limit', 0.10)
@@ -1315,27 +1348,43 @@ class RealTrader:
         # Cache Check
         import time
         current_time = time.time()
+        # Only use cache if no specific symbols requested (general update)
         if not symbols and self.trade_history_cache and (current_time - self.last_history_update < 60):
             return self.trade_history_cache
 
         try:
-            trades = []
-            target_symbols = symbols if symbols else self.monitored_symbols
+            fresh_trades = []
+            # Determine which symbols to fetch fresh data for
+            # If symbols is provided, fetch for them.
+            # If not, fetch for all monitored symbols to keep history up to date.
+            fetch_targets = symbols if symbols else self.monitored_symbols
             
-            if target_symbols:
+            if fetch_targets:
                 # Multi-symbol fetch
-                for sym in target_symbols:
+                for sym in fetch_targets:
                     try:
                         # Limit per coin to avoid fetching too much data
-                        limit_per_coin = 500 if len(target_symbols) > 5 else limit
+                        limit_per_coin = 500 if len(fetch_targets) > 5 else limit
                         t = self.exchange.fetch_my_trades(sym, limit=limit_per_coin) 
-                        trades.extend(t)
+                        fresh_trades.extend(t)
                     except Exception as e:
                         # logger.warning(f"Failed to fetch trades for {sym}: {e}")
                         pass
             else:
                 # Fallback
-                trades = self.exchange.fetch_my_trades(self.symbol, limit=limit)
+                fresh_trades = self.exchange.fetch_my_trades(self.symbol, limit=limit)
+            
+            # Persist Fresh Trades (Dedup handled by class)
+            if fresh_trades:
+                self.trade_persistence.add_trades(fresh_trades)
+            
+            # LOAD ALL HISTORY from Persistence
+            # This ensures we have the complete history regardless of what was just fetched
+            trades = self.trade_persistence.get_all_trades()
+            
+            # If specific symbols were requested, filter the RAW trades to speed up processing?
+            # Or just process all and filter result?
+            # Processing is fast enough for < 10k trades.
             
             # --- Entry Time Matching Logic ---
             # Sort by timestamp ASC to simulate position history
@@ -1703,57 +1752,28 @@ class RealTrader:
         logger.info(f"Updated trade amount to {amount_usdt} USDT")
 
     def get_stats(self):
-        if not self.exchange:
-            return {
-                "win_rate": 0.0,
-                "total_trades": 0,
-                "total_pnl": 0.0,
-                "duration": "0:00:00",
-                "start_time": self.start_time.isoformat()
-            }
-            
-        # User requested ALL history
-        # We try to fetch as many as possible (up to 1000 is usually the max for one call)
-        # If user has > 1000 trades, we might need pagination, but let's start with max limit.
-        trades = self.get_recent_trades(limit=1000)
+        """
+        Get trading statistics from persistence.
+        Works even if exchange is not connected (returns historical data).
+        """
+        # 1. Fetch recent trades to update persistence (if connected)
+        if self.exchange:
+            try:
+                self.get_recent_trades(limit=100) # Fetch recent 100 is enough for updates usually
+            except Exception as e:
+                logger.warning(f"get_stats: Failed to update recent trades: {e}")
         
-        total_pnl = 0.0
-        total_fees = 0.0
-        
-        closed_trades_count = 0
-        winning_trades_count = 0
-        
-        for t in trades:
-            pnl = t.get('realized_pnl', 0.0)
-            fee = 0.0
-            if t.get('fee'):
-                if isinstance(t['fee'], dict):
-                    fee = float(t['fee'].get('cost', 0.0))
-                elif isinstance(t['fee'], (int, float)):
-                    fee = float(t['fee'])
-            
-            # Aggregate Totals
-            # PnL in trade history usually doesn't subtract fee, so we do it manually to get Net PnL
-            net_pnl = pnl - fee
-            
-            total_pnl += net_pnl
-            total_fees += fee
-            
-            if abs(pnl) > 0 or fee > 0:
-                closed_trades_count += 1
-                if net_pnl > 0:
-                    winning_trades_count += 1
-        
-        win_rate = (winning_trades_count / closed_trades_count * 100) if closed_trades_count > 0 else 0.0
+        # 2. Calculate stats from ALL persisted history
+        stats = self.trade_persistence.get_stats()
         
         duration = datetime.now() - self.start_time
         duration_str = str(duration).split('.')[0] # HH:MM:SS
         
         return {
-            "win_rate": win_rate,
-            "total_trades": closed_trades_count,
-            "total_pnl": total_pnl,
-            "total_fees": total_fees,
+            "win_rate": stats.get('win_rate', 0.0),
+            "total_trades": stats.get('total_trades', 0),
+            "total_pnl": stats.get('total_pnl', 0.0),
+            "total_fees": stats.get('total_fees', 0.0),
             "duration": duration_str,
             "start_time": self.start_time.isoformat()
         }
@@ -1834,7 +1854,7 @@ class RealTrader:
                 "unrealized_pnl": 0.0,
                 "positions": {},
                 "trade_history": [],
-                "stats": {"win_rate": 0.0, "total_trades": 0, "total_pnl": 0.0},
+                "stats": self.get_stats(),
                 "initial_balance": 0.0,
                 "connection_status": "Error",
                 "connection_error": str(e)

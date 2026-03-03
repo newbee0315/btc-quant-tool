@@ -42,7 +42,7 @@ TARGET_SYMBOLS = [
 # Performance Standards
 MIN_ACCURACY = 0.55
 MIN_PRECISION = 0.52
-MAX_TRIALS_PER_RUN = 10  # More trials per optimization run
+MAX_TRIALS_PER_RUN = 30  # More trials per optimization run
 
 # Ensure models dir exists
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -91,6 +91,8 @@ class AutoOptimizer:
                 df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
             elif 'datetime' in df.columns:
                 df['datetime'] = pd.to_datetime(df['datetime'])
+            
+            logger.info(f"[{symbol}] Loaded {len(df)} rows from {filename}")
             return df
         except Exception as e:
             logger.error(f"[{symbol}] Error reading CSV: {e}")
@@ -99,16 +101,18 @@ class AutoOptimizer:
     def get_random_params(self):
         """Generate wider range of random hyperparameters"""
         return {
-            'n_estimators': random.choice([100, 300, 500, 800, 1000]),
-            'max_depth': random.choice([3, 4, 5, 6, 8, 10]),
-            'learning_rate': random.uniform(0.005, 0.3),
-            'subsample': random.uniform(0.5, 1.0),
-            'colsample_bytree': random.uniform(0.5, 1.0),
-            'gamma': random.uniform(0, 5),
-            'min_child_weight': random.randint(1, 10),
+            'n_estimators': random.choice([300, 500, 800, 1000, 1500, 2000]),
+            'max_depth': random.choice([3, 4, 5, 6, 7, 8, 10]),
+            'learning_rate': random.choice([0.001, 0.005, 0.01, 0.02, 0.05, 0.1]),
+            'subsample': random.uniform(0.6, 0.9),
+            'colsample_bytree': random.uniform(0.6, 0.9),
+            'gamma': random.uniform(0, 0.5),
+            'min_child_weight': random.choice([1, 3, 5, 7, 9]),
+            'reg_alpha': random.choice([0, 0.001, 0.01, 0.1, 1, 10]),
+            'reg_lambda': random.choice([0, 0.001, 0.01, 0.1, 1, 10]),
             'random_state': random.randint(0, 10000),
             'n_jobs': 2, # Reduce threads to save memory
-            'eval_metric': 'logloss'
+            'eval_metric': 'auc'
         }
 
     def evaluate_model(self, model, X_test, y_test):
@@ -126,7 +130,8 @@ class AutoOptimizer:
             "precision": round(prec, 4),
             "recall": round(rec, 4),
             "f1": round(f1, 4),
-            "auc": round(auc, 4)
+            "auc": round(auc, 4),
+            "timestamp": time.time()
         }
 
     def optimize_symbol(self, symbol, horizon=10):
@@ -142,7 +147,36 @@ class AutoOptimizer:
         # logger.info(f"[{symbol}] Generating features...")
         try:
             df = FeatureEngineer.generate_features(df)
+            
+            # Debug: Check for columns with all NaNs or High NaNs
+            nan_cols = df.columns[df.isna().all()].tolist()
+            if nan_cols:
+                logger.warning(f"[{symbol}] Columns entirely NaN: {nan_cols}")
+                df = df.drop(columns=nan_cols)
+            
+            # Check for columns with > 10% NaNs
+            limit_nan = len(df) * 0.1
+            high_nan_cols = df.columns[df.isna().sum() > limit_nan].tolist()
+            if high_nan_cols:
+                 logger.warning(f"[{symbol}] Columns with >10% NaN: {high_nan_cols}")
+                 df = df.drop(columns=high_nan_cols)
+
+            # Log how many rows before dropna
+            rows_before = len(df)
+            logger.info(f"[{symbol}] Rows before dropna: {rows_before}")
+            
+            # Check for NaNs per column for debugging
+            if rows_before > 0:
+                null_counts = df.isna().sum()
+                cols_with_nulls = null_counts[null_counts > 0]
+                if not cols_with_nulls.empty:
+                    logger.info(f"[{symbol}] Columns with NaNs: {cols_with_nulls.to_dict()}")
+
             df = df.dropna()
+            rows_after = len(df)
+            
+            if rows_after < rows_before * 0.5:
+                logger.warning(f"[{symbol}] Dropna removed {rows_before - rows_after} rows ({100*(rows_before-rows_after)/rows_before:.1f}%). Remaining: {rows_after}")
         except Exception as e:
             logger.error(f"[{symbol}] Feature engineering failed: {e}")
             return False
@@ -194,11 +228,26 @@ class AutoOptimizer:
             
             params = self.get_random_params()
             # Inject scale_pos_weight to handle imbalance
-            params['scale_pos_weight'] = scale_pos_weight
+            if scale_pos_weight > 1.0:
+                 # Fix bias towards long: Cap scale_pos_weight to prevent over-prediction of positives
+                 # Cap at 3.0 or full weight, whichever is smaller
+                 max_weight = min(scale_pos_weight, 3.0)
+                 params['scale_pos_weight'] = random.uniform(0.1, max_weight)
+            else:
+                 params['scale_pos_weight'] = random.uniform(0.1, 1.0)
+            
+            # Ensure eval_metric is set in params for __init__
+            if 'eval_metric' not in params:
+                params['eval_metric'] = 'auc'
             
             try:
-                model = XGBClassifier(**params)
-                model.fit(X_train, y_train)
+                model = XGBClassifier(**params, early_stopping_rounds=50)
+                model.fit(
+                    X_train, 
+                    y_train, 
+                    eval_set=[(X_test, y_test)], 
+                    verbose=False
+                )
                 metrics = self.evaluate_model(model, X_test, y_test)
                 
                 # Custom Score: Heavily penalize low precision
@@ -251,6 +300,21 @@ class AutoOptimizer:
                 return True
             else:
                 logger.info(f"[{symbol}] New model not better enough. Best run: Acc={best_metrics_run['accuracy']}, Prec={best_metrics_run['precision']}")
+                
+                # If existing model is invalid AND we couldn't find a better one, we should probably delete the old one to be safe.
+                if not current_is_qualified:
+                    # Check if file exists and delete it
+                    symbol_key = f"{symbol}USDT"
+                    model_filename = f"xgb_{symbol_key}_{horizon}m.joblib"
+                    model_path = os.path.join(MODELS_DIR, model_filename)
+                    if os.path.exists(model_path):
+                        os.remove(model_path)
+                        logger.warning(f"[{symbol}] 🗑️ Deleted unsafe old model (since no better model found).")
+                        
+                        # Update metrics to reflect deletion
+                        if symbol_key in self.metrics and f"{horizon}m" in self.metrics[symbol_key]:
+                            self.metrics[symbol_key][f"{horizon}m"]["status"] = "deleted"
+                            self.save_metrics()
         
         return False
 

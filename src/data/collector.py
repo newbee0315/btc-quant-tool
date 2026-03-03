@@ -59,7 +59,7 @@ class CryptoDataCollector:
 
         try:
             url = f"{self.base_url}/ticker/24hr?symbol={self.symbol}"
-            resp = self.session.get(url, timeout=5)
+            resp = self.session.get(url, timeout=15)
             if resp.status_code == 200:
                 ticker = resp.json()
                 price = float(ticker['lastPrice'])
@@ -174,7 +174,7 @@ class CryptoDataCollector:
                 params['startTime'] = since
                 
             url = f"{self.base_url}/klines"
-            resp = self.session.get(url, params=params, timeout=10)
+            resp = self.session.get(url, params=params, timeout=30)
             
             if resp.status_code != 200:
                 logger.warning(f"API Error: {resp.status_code}. Return Empty DF.")
@@ -216,7 +216,7 @@ class CryptoDataCollector:
         """Fetch current order book depth"""
         try:
             url = f"{self.base_url}/depth?symbol={self.symbol}&limit={limit}"
-            resp = self.session.get(url, timeout=5)
+            resp = self.session.get(url, timeout=15)
             if resp.status_code == 200:
                 return resp.json()
             else:
@@ -289,7 +289,7 @@ class CryptoDataCollector:
                 # but fetch_ohlcv returns 1000 candles starting from 'since'.
                 # So just check the last timestamp.
                 
-                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'quote_volume', 'taker_buy_volume', 'taker_buy_quote_volume']].values.tolist()
+                raw_batch = df_batch[['timestamp', 'open', 'high', 'low', 'close', 'volume']].values.tolist()
                 
                 # Filter duplicate/overlap if any (though 'since' logic should prevent it)
                 if all_ohlcv and raw_batch[0][0] <= all_ohlcv[-1][0]:

@@ -369,9 +369,30 @@ class TrendMLStrategy(BaseStrategy):
         if market_mode == 'low': effective_threshold = min(0.80, self.ml_threshold + 0.10)
         if market_mode == 'high': effective_threshold = max(0.55, self.ml_threshold - 0.05)
         
-        is_ml_bullish = ml_prob >= effective_threshold
-        is_ml_bearish = ml_prob <= (1 - effective_threshold)
+        # [Trend Strength Booster]
+        # If trend is very strong (ADX > 30), lower the ML barrier slightly to catch continuation
+        # BUT for shorts, we need to be careful not to short into a strong bounce.
+        if adx > 30:
+            effective_threshold = max(0.55, effective_threshold - 0.05)
         
+        is_ml_bullish = ml_prob >= effective_threshold
+        # Stricter Bearish: Require ml_prob <= 0.40 always, to avoid weak shorts
+        is_ml_bearish = ml_prob <= min(0.40, (1 - effective_threshold))
+        
+        # Panic Short Override (Relative ML):
+        # If trend is strongly down (Price < EMA20 & EMA50) but ML is stuck in Bullish bias (> 0.5),
+        # allow Short if ML is "Relatively Bearish" (e.g. < 0.35)
+        # or if Technicals are extremely bearish (ADX > 40).
+        # We only override if ML is NOT predicting strong UP (> 0.55).
+        
+        is_panic_short_condition = (close_price < ema_20) and (close_price < ema_fast) and (adx > 40) # Stricter ADX (was 30)
+        if is_panic_short_condition:
+             # If ML is just mildly bullish (0.5 - 0.55) or neutral, but trend is crashing, treat as bearish enough
+             # OPTIMIZED: Stricter ML requirement for panic short (was 0.48)
+             if ml_prob < 0.35:
+                 is_ml_bearish = True
+                 reason.append("ML中性但趋势极弱(强制看空)")
+
         # Secondary confirmation (looser threshold, e.g. > 0.55 for bull, < 0.45 for bear)
         is_ml10_bullish = ml_prob_10m > 0.55
         is_ml10_bearish = ml_prob_10m < 0.45
@@ -391,7 +412,7 @@ class TrendMLStrategy(BaseStrategy):
         # Added Safety: Close must be above EMA20 to ensure immediate momentum (Fix for falling knife)
         is_uptrend = (ha_close > (ema_trend * 0.995)) and (close_price > ema_20)
         is_rsi_safe_long = rsi < 80 # Relaxed from 75
-        is_strong_adx = adx > 10 # Relaxed from 15 for more signals
+        is_strong_adx = adx > 20 # Strengthened from 10 to filter noise
         is_macd_bullish = macd_hist > 0 and macd_hist > prev_macd_hist
         
         # High Frequency Scalping Mode (Low Volatility)
@@ -431,7 +452,8 @@ class TrendMLStrategy(BaseStrategy):
             
             # Scalp Short
             # Added Close < EMA20 check
-            if is_ha_bearish and rsi > 30 and ha_close < ema_fast and ml_prob < 0.55 and close_price < ema_20:
+            # OPTIMIZED: Stricter ML (was 0.55) to avoid counter-trend scalps
+            if is_ha_bearish and rsi > 30 and ha_close < ema_fast and ml_prob < 0.45 and close_price < ema_20:
                  if obi < -0.1 and taker_buy_ratio < 0.95:
                      is_scalp_short = True
                 
@@ -488,9 +510,10 @@ class TrendMLStrategy(BaseStrategy):
              is_tech_reversal_long = True
 
         if (self.enable_czsc and is_chan_confirmed_long and is_volume_support and is_ha_bullish and is_rsi_safe_long) or (is_tech_reversal_long and is_ml_bullish):
-            # Parameter Tuning: Stricter ML confirmation for reversals (was 0.65)
-            # If purely technical reversal, require higher ML confidence
-            threshold = 0.70 if not is_tech_reversal_long else 0.75
+            # Parameter Tuning: Optimized ML confirmation for reversals
+            # If purely technical reversal (Price > EMA50), allow standard ML threshold (0.60)
+            # If CZSC reversal, require higher confidence (0.65)
+            threshold = 0.65 if not is_tech_reversal_long else self.ml_threshold
             
             if ml_prob > threshold: 
                 signal = 1
@@ -535,7 +558,7 @@ class TrendMLStrategy(BaseStrategy):
             else:
                 reason.append(f"HA价格<EMA200")
             reason.append(f"HA阴线")
-            reason.append(f"ADX>20")
+            reason.append(f"ADX>10") # Relaxed from 20 for more signals
             reason.append(f"RSI({rsi:.1f})>30")
             reason.append(f"MACD死叉增强")
             if is_ml_bearish:
@@ -552,21 +575,27 @@ class TrendMLStrategy(BaseStrategy):
              # Price broke below Fast EMA (50) and Short EMA (20) with Momentum
              is_tech_reversal_short = True
 
-        if (self.enable_czsc and is_chan_confirmed_short and is_volume_support and is_ha_bearish and is_rsi_safe_short) or (is_tech_reversal_short and is_ml_bearish):
-            # Parameter Tuning: Stricter ML confirmation for reversals (was 0.35)
-            # If purely technical reversal, require higher ML confidence (bearish means prob < threshold)
-            threshold = 0.30 if not is_tech_reversal_short else 0.25
+        if (self.enable_czsc and is_chan_confirmed_short and is_volume_support and is_ha_bearish and is_rsi_safe_short) or ((is_tech_reversal_short or (is_panic_short_condition and is_rsi_safe_short)) and is_ml_bearish):
+            # Parameter Tuning: Optimized ML confirmation for reversals
+            # If purely technical reversal, allow standard ML threshold (0.40)
+            threshold = 0.35 if not is_tech_reversal_short else (1.0 - self.ml_threshold)
             
-            if ml_prob < threshold: 
+            # Allow entry if ML meets strict threshold OR if Panic Short condition is active
+            if ml_prob < threshold or is_panic_short_condition: 
                 signal = -1
                 if is_tech_reversal_short:
                      reason.append(f"趋势反转(Price<EMA50)")
+                elif is_panic_short_condition:
+                     reason.append(f"恐慌做空(Price<EMA50+ADX>25)")
                 else:
                      reason.append(f"缠论顶背驰/分型反转")
                 
                 reason.append(f"放量确认")
                 reason.append(f"HA阴线")
-                reason.append(f"ML确认({ml_prob:.2f})<{threshold}")
+                if is_panic_short_condition:
+                    reason.append(f"恐慌做空(ML{ml_prob:.2f}忽略)")
+                else:
+                    reason.append(f"ML确认({ml_prob:.2f})<{threshold}")
 
 
         # -----------------------------------------------------------

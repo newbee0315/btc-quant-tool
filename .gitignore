@@ -66,3 +66,5 @@ notification_history.json
 backtest_equity.csv
 optimization_report.md
 .trae/
+reports/
+cli_*

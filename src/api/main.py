@@ -40,6 +40,7 @@ from src.strategies.portfolio_manager import PortfolioManager
 from src.utils.maintenance_scheduler import register_maintenance_tasks
 from src.utils.strategy_optimizer import run_strategy_optimization
 from src.utils.config_manager import config_manager as global_config_manager
+from src.content.social_media_generator import SocialMediaGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -85,10 +86,14 @@ resource_manager = ResourceManager()
 
 # Initialize components
 FEISHU_WEBHOOK_URL = os.getenv("FEISHU_WEBHOOK_URL")
+FEISHU_APP_ID = os.getenv("FEISHU_APP_ID")
+FEISHU_APP_SECRET = os.getenv("FEISHU_APP_SECRET")
+
 if not FEISHU_WEBHOOK_URL:
     logger.warning("FEISHU_WEBHOOK_URL not set in .env file. Feishu notifications will be disabled.")
 
-feishu_bot = FeishuBot(FEISHU_WEBHOOK_URL)
+feishu_bot = FeishuBot(FEISHU_WEBHOOK_URL, app_id=FEISHU_APP_ID, app_secret=FEISHU_APP_SECRET)
+# social_generator will be initialized after config load
 
 # Use FuturesDataCollector for better alignment with strategy
 collector = FuturesDataCollector(symbol='BTCUSDT')
@@ -112,6 +117,11 @@ class StrategyConfig(BaseModel):
     leverage: int = Field(1, ge=1, le=10)
     max_portfolio_leverage: int = Field(10, ge=1, le=10)
 
+class SocialConfig(BaseModel):
+    start_date: str = "2026-02-28"
+    initial_debt: float = 13500.0
+    enabled: bool = True
+
 class TraderConfig(BaseModel):
     mode: str = "paper"  # "paper" or "real"
     sl_pct: float = 0.02
@@ -125,6 +135,7 @@ class TraderConfig(BaseModel):
     trailing_stop_trigger_pct: float = 0.01  # Trigger trailing stop when price moves 1% in favor
     trailing_stop_lock_pct: float = 0.02     # Lock profit when price moves 2% in favor
     preserve_proxy_on_update: bool = True    # Preserve existing proxy_url when updates omit it
+    social: Optional[SocialConfig] = Field(default_factory=SocialConfig)
 
 # Global Config State
 TRADER_CONFIG_FILE = os.path.join(os.path.dirname(__file__), '../../trader_config.json')
@@ -167,6 +178,13 @@ try:
 except Exception as e:
     logger.error(f"Failed to load initial strategy config: {e}")
 trader_config = load_trader_config()
+
+# Initialize Social Media Generator with config
+social_cfg = trader_config.social or SocialConfig()
+social_generator = SocialMediaGenerator(
+    start_date=social_cfg.start_date, 
+    initial_debt=social_cfg.initial_debt
+)
 
 # Configure Collector Proxy
 if trader_config.proxy_url:
@@ -388,9 +406,11 @@ async def send_hourly_monitor_report():
         win_rate = stats.get('win_rate', 0.0)
         total_trades = stats.get('total_trades', 0)
         
-        positions = status.get('positions', {})
+        positions = status.get('positions') or {}
         position_count = len(positions)
         
+        logger.info(f"Feishu Report: Loaded status. Equity={equity}, Positions count={position_count}, Keys={list(positions.keys())}")
+
         total_position_value = sum(pos.get('position_value_usdt', 0.0) for pos in positions.values())
         
         roi = (realized_pnl / initial_balance * 100) if initial_balance > 0 else 0.0
@@ -428,16 +448,15 @@ async def send_hourly_monitor_report():
                 # Ensure symbol is clean (though get_positions should have cleaned it)
                 clean_sym = sym.replace(':USDT', '')
                 
-                # Colorize PnL: Red for positive, Blue for negative
+                # Colorize PnL: Red for positive, Blue for negative (Use Emojis instead of font tags for compatibility)
                 pnl_str = f"{pnl:+.2f}U"
                 if pnl > 0:
-                    # Red and Bold
-                    pnl_display = f"<font color='red'>**{pnl_str}**</font>"
+                    pnl_display = f"🔴 **{pnl_str}**" # Red circle for profit (China standard) or Green? Crypto usually Green for up.
+                    # But user code had Red for > 0 (China stock style). Let's stick to user intent.
                 elif pnl < 0:
-                    # Blue and Bold
-                    pnl_display = f"<font color='blue'>**{pnl_str}**</font>"
+                    pnl_display = f"🟢 **{pnl_str}**" # Green circle for loss
                 else:
-                    pnl_display = f"**{pnl_str}**"
+                    pnl_display = f"⚪ **{pnl_str}**"
 
                 msg += (
                     f"**{clean_sym} {lev}x {side}**\n"
@@ -455,6 +474,52 @@ async def send_hourly_monitor_report():
         
     except Exception as e:
         logger.error(f"Failed to send hourly report: {e}")
+        return {"status": "error", "message": str(e)}
+
+async def send_social_media_report():
+    """Send daily social media content to Feishu (Binance Square Copy)"""
+    logger.info("Starting send_social_media_report task...")
+    try:
+        if not paper_trader:
+             logger.error("Trader not initialized, skipping social report.")
+             return
+
+        # Fetch status in executor
+        loop = asyncio.get_running_loop()
+        status = await loop.run_in_executor(None, paper_trader.get_status)
+        
+        # 1. Generate Image (and get path)
+        image_path = await loop.run_in_executor(None, social_generator.generate_image, status)
+        image_sent = False
+        
+        # 2. Try to Send Image
+        if image_path and feishu_bot.app_id and feishu_bot.app_secret:
+             logger.info(f"Uploading social card image: {image_path}")
+             image_key = await loop.run_in_executor(None, feishu_bot.upload_image, image_path)
+             if image_key:
+                 await loop.run_in_executor(None, feishu_bot.send_image, image_key)
+                 image_sent = True
+                 logger.info("Sent social card image to Feishu")
+             else:
+                 logger.error("Failed to upload image to Feishu")
+        
+        # 3. Generate Text Content
+        msg = social_generator.generate_report(status)
+        title = "📢 币安广场自动日更内容"
+        
+        if not image_sent:
+            if image_path:
+                msg += f"\n\n⚠️ Image generated locally at `{image_path}` but cannot be sent without Feishu App ID/Secret."
+            else:
+                msg += "\n\n⚠️ Image generation failed."
+        
+        # 4. Send Text
+        await loop.run_in_executor(None, feishu_bot.send_markdown, msg, title)
+        logger.info("Sent social media report to Feishu")
+        return {"status": "success", "message": "Social report sent"}
+        
+    except Exception as e:
+        logger.error(f"Failed to send social report: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -517,6 +582,15 @@ async def lifespan(app: FastAPI):
         misfire_grace_time=3600,
         coalesce=True,
         max_instances=1
+    )
+
+    # Daily Social Media Report (18:00)
+    scheduler.add_job(
+        send_social_media_report,
+        CronTrigger(hour=18, minute=0),
+        id='social_media_report',
+        replace_existing=True,
+        misfire_grace_time=3600
     )
 
     # Betting Signals (1 min)
@@ -739,6 +813,11 @@ async def test_report():
     job_info = [{"id": j.id, "next_run_time": str(j.next_run_time)} for j in jobs]
     logger.info(f"Current Jobs: {job_info}")
     return await send_hourly_monitor_report()
+
+@app.get("/api/v1/test-social-report")
+async def test_social_report():
+    """Trigger manual social media report for testing"""
+    return await send_social_media_report()
 
 @app.get("/api/v1/bot/config", response_model=BotConfig)
 async def get_bot_config():
